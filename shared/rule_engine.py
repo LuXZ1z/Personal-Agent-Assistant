@@ -13,6 +13,7 @@ class CommandType(str, Enum):
     QUERY = "query"  # 查询命令
     SUMMARY = "summary"  # 总结命令
     NAVIGATE = "navigate"  # 导航命令（选择表/目录）
+    TAROT = "tarot"  # 塔罗牌命令
 
 
 class RuleEngine:
@@ -26,6 +27,7 @@ class RuleEngine:
         CommandType.QUERY: ["查询", "搜索", "查看", "列表", "显示", "找", "列出", "显示所有"],
         CommandType.SUMMARY: ["总结", "汇总", "分析", "统计", "概括"],
         CommandType.NAVIGATE: ["进入", "切换到", "打开", "选择", "切换", "进入目录", "进入表"],
+        CommandType.TAROT: ["塔罗牌", "塔罗", "抽牌", "占卜", "tarot", "/tarot"],
     }
     
     # 查询参数模式
@@ -94,6 +96,11 @@ class RuleEngine:
         for keyword in self.COMMAND_PATTERNS[CommandType.SUMMARY]:
             if keyword in text:
                 return CommandType.SUMMARY, None
+        
+        # 检查塔罗牌命令
+        for keyword in self.COMMAND_PATTERNS[CommandType.TAROT]:
+            if keyword in text:
+                return CommandType.TAROT, None
         
         # 默认为普通文本
         return CommandType.TEXT, None

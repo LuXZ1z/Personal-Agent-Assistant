@@ -11,7 +11,8 @@ from redis.exceptions import RedisError
 from shared.config import settings
 from shared.message_types import (
     WeChatMessage, RawTextMessage, QueryRequest, SummaryRequest, 
-    StorageResult, QueryResult, SummaryResult, WeChatResponse
+    StorageResult, QueryResult, SummaryResult, WeChatResponse,
+    TarotRequest, TarotResult
 )
 from agent_router.command_parser import CommandParser
 from shared.utils import setup_logger
@@ -92,6 +93,16 @@ class MessageRouter:
                 )
                 self._send_to_queue("summary_request", summary_request.model_dump_json())
                 logger.info(f"总结请求已发送: {summary_request.request_id}")
+            
+            elif msg_type == "tarot":
+                # 塔罗牌命令：发送塔罗牌请求
+                tarot_request = TarotRequest(
+                    spread_type=parsed_data.get("spread_type", "single"),
+                    question=parsed_data.get("question"),
+                    user_id=parsed_data.get("user_id")
+                )
+                self._send_to_queue("tarot_request", tarot_request.model_dump_json())
+                logger.info(f"塔罗牌请求已发送: {tarot_request.request_id}")
             
             else:
                 # 普通文本消息：发送到文本结构化队列
@@ -215,6 +226,55 @@ class MessageRouter:
         except Exception as e:
             logger.error(f"处理总结结果失败: {e}")
     
+    def process_tarot_result(self, result: TarotResult) -> None:
+        """
+        处理塔罗牌结果
+        
+        Args:
+            result: 塔罗牌结果
+        """
+        try:
+            if result.success and result.interpretation:
+                # 构建响应文本
+                response_text = "🔮 塔罗牌占卜结果 🔮\n\n"
+                
+                # 显示抽取的牌
+                spread_names = {
+                    "single": "单张牌",
+                    "three_card": "三张牌（过去-现在-未来）",
+                    "five_card": "五张牌（凯尔特十字简化版）"
+                }
+                response_text += f"✨ 牌阵类型：{spread_names.get(result.spread_type, result.spread_type)}\n\n"
+                
+                positions_map = {
+                    "single": ["单张牌"],
+                    "three_card": ["过去", "现在", "未来"],
+                    "five_card": ["现状", "挑战", "过去", "未来", "结果"]
+                }
+                positions = positions_map.get(result.spread_type, [])
+                
+                response_text += "📌 抽取的牌：\n"
+                for i, card in enumerate(result.cards):
+                    position = positions[i] if i < len(positions) else f"位置{i+1}"
+                    position_emoji = "⬆️" if card.get("upright", True) else "⬇️"
+                    response_text += f"  {position}: {card['name']} ({card.get('position', '正位')}) {position_emoji}\n"
+                
+                response_text += "\n" + "="*50 + "\n\n"
+                response_text += result.interpretation
+                
+                response = WeChatResponse(
+                    message_id=result.request_id,
+                    text=response_text
+                )
+            else:
+                response = WeChatResponse(
+                    message_id=result.request_id,
+                    text=f"🔮 占卜失败: {result.error or '未知错误'}"
+                )
+            self._send_response(response)
+        except Exception as e:
+            logger.error(f"处理塔罗牌结果失败: {e}")
+    
     def run(self):
         """运行消息路由器（主循环）"""
         logger.info("消息路由器开始运行")
@@ -244,6 +304,12 @@ class MessageRouter:
                 if summary_result_json:
                     result = SummaryResult.model_validate_json(summary_result_json[1])
                     self.process_summary_result(result)
+                
+                # 处理塔罗牌结果
+                tarot_result_json = self.redis_client.brpop("tarot_result", timeout=0.1)
+                if tarot_result_json:
+                    result = TarotResult.model_validate_json(tarot_result_json[1])
+                    self.process_tarot_result(result)
                 
             except KeyboardInterrupt:
                 logger.info("收到中断信号，停止消息路由器")

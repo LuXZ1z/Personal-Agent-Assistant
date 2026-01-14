@@ -141,3 +141,27 @@ class WeChatResponse(BaseModel):
             datetime: lambda v: v.isoformat()
         }
 
+
+class TarotRequest(BaseModel):
+    """塔罗牌请求消息"""
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    spread_type: str = "single"  # single, three_card, five_card
+    question: Optional[str] = None  # 用户的问题（可选）
+    user_id: Optional[str] = None
+
+
+class TarotResult(BaseModel):
+    """塔罗牌结果消息"""
+    request_id: str
+    success: bool
+    spread_type: str
+    cards: list = Field(default_factory=list)  # 抽取的牌列表
+    interpretation: Optional[str] = None  # LLM生成的解读
+    error: Optional[str] = None
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+

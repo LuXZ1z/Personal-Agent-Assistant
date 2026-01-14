@@ -11,6 +11,7 @@
 - **Agent 2: 文本结构化Agent** - 调用LLM API将自然语言转换为结构化JSON
 - **Agent 3: 数据存储Agent** - 数据库存储操作（纯规则实现）
 - **Agent 4: 数据服务Agent** - 数据查询和总结服务（查询用规则，总结用LLM API）
+- **Agent 5: 塔罗牌服务Agent** - 塔罗牌抽取和AI解读服务
 
 ## 设计原则
 
@@ -29,6 +30,7 @@
 - ✅ 记账业务管理（完整CRUD、时间段查询、统计分析、AI总结）
 - ✅ 随笔业务管理（完整CRUD、AI情感分析和内容总结）
 - ✅ 员工工作情况管理（完整CRUD、多维度统计分析）
+- ✅ 塔罗牌占卜功能（单张牌、三张牌、五张牌占卜，AI生成带emoji的解读）
 
 ## 技术栈
 
@@ -105,6 +107,7 @@ python main.py
 - Agent 2: 文本结构化
 - Agent 3: 数据存储
 - Agent 4: 数据服务
+- Agent 5: 塔罗牌服务
 
 ### 单独运行Agent（用于调试）
 
@@ -120,6 +123,9 @@ python -m agent_storage.queue_consumer
 
 # Agent 4: 数据服务
 python -m agent_service.queue_consumer
+
+# Agent 5: 塔罗牌服务
+python -m agent_tarot.queue_consumer
 
 # 微信服务器
 python -m agent_wechat.server
@@ -165,6 +171,16 @@ python -m agent_wechat.server
 - `切换到记账` - 切换到记账目录
 - `选择员工管理` - 选择员工管理表
 
+### 5. 塔罗牌占卜
+
+使用塔罗牌命令：
+
+- `塔罗牌` - 单张牌占卜
+- `三张牌` 或 `三张牌占卜` - 三张牌占卜（过去-现在-未来）
+- `五张牌` 或 `五张牌占卜` - 五张牌占卜（凯尔特十字简化版）
+- `塔罗牌 我想知道工作运势` - 带问题的占卜
+- `抽牌` 或 `占卜` - 单张牌占卜
+
 ## 项目结构
 
 ```
@@ -174,6 +190,7 @@ Personal-Agent-Assistant/
 ├── agent_structurizer/    # Agent 2: 文本结构化Agent
 ├── agent_storage/         # Agent 3: 数据存储Agent
 ├── agent_service/         # Agent 4: 数据服务Agent
+├── agent_tarot/           # Agent 5: 塔罗牌服务Agent
 ├── shared/                # 共享模块
 ├── data/                  # 数据库文件目录
 ├── logs/                  # 日志文件目录
@@ -181,6 +198,8 @@ Personal-Agent-Assistant/
 ├── accounting_manager.py  # 记账业务管理器
 ├── essay_manager.py      # 随笔业务管理器
 ├── employee_manager.py   # 员工业务管理器
+├── tarot_manager.py      # 塔罗牌管理器
+├── TAROT_README.md       # 塔罗牌功能详细说明
 ├── requirements.txt      # Python依赖
 └── README.md            # 项目文档
 ```
@@ -273,6 +292,33 @@ python employee_manager.py
 **使用示例：**
 - 输入："今天张三完成了项目文档编写，工作态度积极，完成度90%"
 - 系统自动提取：员工姓名、任务、状态、工作态度、完成度等信息
+
+### 4. 塔罗牌占卜系统
+
+**启动方式：**
+```bash
+python tarot_manager.py
+```
+
+**主要功能：**
+- 🔮 单张牌占卜：快速了解当前状况或某个问题的答案
+- 📜 三张牌占卜（过去-现在-未来）：了解时间线上的发展
+- ⭐ 五张牌占卜（凯尔特十字简化版）：提供更全面的洞察
+- 💫 AI自动生成解读：使用LLM生成温暖、有启发性且带emoji的解读
+- 📖 塔罗牌知识：查看塔罗牌基础知识
+
+**特点：**
+- 完整的78张标准塔罗牌（22张大阿卡纳 + 56张小阿卡纳）
+- 支持正位/逆位随机抽取
+- 解读内容大量使用emoji，生动有趣
+- 可通过微信消息或交互式界面使用
+
+**使用示例：**
+- 交互式界面：运行 `python tarot_manager.py` 后选择占卜类型
+- 微信消息：发送 `塔罗牌` 或 `三张牌` 等命令
+- 带问题占卜：`塔罗牌 我想知道今天的工作运势`
+
+**详细说明：** 查看 [TAROT_README.md](TAROT_README.md)
 
 ## 业务隔离
 

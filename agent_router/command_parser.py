@@ -76,6 +76,36 @@ class CommandParser:
                 "user_id": user_id
             }
         
+        elif command_type == CommandType.TAROT:
+            # 塔罗牌命令
+            # 解析牌阵类型
+            spread_type = "single"  # 默认单张牌
+            question = None
+            
+            # 检查牌阵类型关键词
+            if "三张" in text or "三张牌" in text or "过去现在未来" in text:
+                spread_type = "three_card"
+            elif "五张" in text or "五张牌" in text or "凯尔特" in text:
+                spread_type = "five_card"
+            
+            # 提取问题（去除命令关键词后的内容）
+            tarot_keywords = ["塔罗牌", "塔罗", "抽牌", "占卜", "tarot", "/tarot"]
+            for keyword in tarot_keywords:
+                if keyword in text:
+                    # 提取关键词后的内容作为问题
+                    parts = text.split(keyword, 1)
+                    if len(parts) > 1:
+                        question = parts[1].strip()
+                        if not question:
+                            question = None
+                    break
+            
+            return "tarot", {
+                "spread_type": spread_type,
+                "question": question,
+                "user_id": user_id
+            }
+        
         else:
             # 普通文本消息
             return "text", {

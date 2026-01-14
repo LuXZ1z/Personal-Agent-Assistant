@@ -75,6 +75,7 @@ class AgentManager:
             ("agent_structurizer.queue_consumer", "Agent2-文本结构化"),
             ("agent_storage.queue_consumer", "Agent3-数据存储"),
             ("agent_service.queue_consumer", "Agent4-数据服务"),
+            ("agent_tarot.queue_consumer", "Agent5-塔罗牌服务"),
         ]
         
         for agent_module, agent_name in agents:
