@@ -307,18 +307,52 @@ class EssayManager:
         print("AI分析随笔")
         print("-"*60)
         
-        record_id = input("请输入要分析的记录ID: ").strip()
-        if not record_id.isdigit():
-            print("ID格式错误")
-            return
-        
+        # 先显示最近的记录列表，方便用户选择
         session = self.db.get_session()
         try:
-            record = session.query(StructuredRecord).filter(
-                StructuredRecord.id == int(record_id),
+            # 查询最近的随笔记录
+            records = session.query(StructuredRecord).filter(
                 StructuredRecord.table_name == self.table_name,
                 StructuredRecord.record_type == "随笔"
-            ).first()
+            ).order_by(StructuredRecord.created_at.desc()).limit(10).all()
+            
+            if not records:
+                print("\n暂无随笔记录")
+                input("\n按回车键继续...")
+                return
+            
+            print(f"\n最近的 {len(records)} 条随笔记录：")
+            print("-"*60)
+            for i, rec in enumerate(records, 1):
+                fields = rec.structured_data.get('fields', {})
+                title = fields.get('title', '无标题')
+                content_preview = fields.get('content', rec.original_text)[:50] + '...' if len(fields.get('content', rec.original_text)) > 50 else fields.get('content', rec.original_text)
+                date_str = fields.get('date', '')
+                mood = fields.get('mood', '未记录')
+                
+                print(f"\n[{i}] ID: {rec.id}")
+                print(f"    标题: {title}")
+                print(f"    日期: {date_str} | 心情: {mood}")
+                print(f"    内容预览: {content_preview}")
+            
+            print("\n" + "-"*60)
+            record_id = input("请输入要分析的记录ID（或输入序号）: ").strip()
+            
+            # 支持输入序号
+            if record_id.isdigit():
+                record_num = int(record_id)
+                if 1 <= record_num <= len(records):
+                    record = records[record_num - 1]
+                else:
+                    # 如果不是序号，尝试作为ID查找
+                    record = session.query(StructuredRecord).filter(
+                        StructuredRecord.id == record_num,
+                        StructuredRecord.table_name == self.table_name,
+                        StructuredRecord.record_type == "随笔"
+                    ).first()
+            else:
+                print("输入格式错误")
+                return
             
             if not record:
                 print("记录不存在")
@@ -360,17 +394,49 @@ class EssayManager:
         print("修改随笔记录")
         print("-"*60)
         
-        record_id = input("请输入要修改的记录ID: ").strip()
-        if not record_id.isdigit():
-            print("ID格式错误")
-            return
-        
+        # 先显示最近的记录列表，方便用户选择
         session = self.db.get_session()
         try:
-            record = session.query(StructuredRecord).filter(
-                StructuredRecord.id == int(record_id),
-                StructuredRecord.table_name == self.table_name
-            ).first()
+            records = session.query(StructuredRecord).filter(
+                StructuredRecord.table_name == self.table_name,
+                StructuredRecord.record_type == "随笔"
+            ).order_by(StructuredRecord.created_at.desc()).limit(10).all()
+            
+            if not records:
+                print("\n暂无随笔记录")
+                input("\n按回车键继续...")
+                return
+            
+            print(f"\n最近的 {len(records)} 条随笔记录：")
+            print("-"*60)
+            for i, rec in enumerate(records, 1):
+                fields = rec.structured_data.get('fields', {})
+                title = fields.get('title', '无标题')
+                content_preview = fields.get('content', rec.original_text)[:50] + '...' if len(fields.get('content', rec.original_text)) > 50 else fields.get('content', rec.original_text)
+                date_str = fields.get('date', '')
+                
+                print(f"\n[{i}] ID: {rec.id}")
+                print(f"    标题: {title}")
+                print(f"    日期: {date_str}")
+                print(f"    内容预览: {content_preview}")
+            
+            print("\n" + "-"*60)
+            record_id = input("请输入要修改的记录ID（或输入序号）: ").strip()
+            
+            # 支持输入序号
+            if record_id.isdigit():
+                record_num = int(record_id)
+                if 1 <= record_num <= len(records):
+                    record = records[record_num - 1]
+                else:
+                    # 如果不是序号，尝试作为ID查找
+                    record = session.query(StructuredRecord).filter(
+                        StructuredRecord.id == record_num,
+                        StructuredRecord.table_name == self.table_name
+                    ).first()
+            else:
+                print("输入格式错误")
+                return
             
             if not record:
                 print("记录不存在")
@@ -421,25 +487,65 @@ class EssayManager:
         print("删除随笔记录")
         print("-"*60)
         
-        record_id = input("请输入要删除的记录ID: ").strip()
-        if not record_id.isdigit():
-            print("ID格式错误")
-            return
-        
-        confirm = input(f"确认删除记录 {record_id}？(y/n): ").strip().lower()
-        if confirm != 'y':
-            print("已取消")
-            return
-        
+        # 先显示最近的记录列表，方便用户选择
         session = self.db.get_session()
         try:
-            record = session.query(StructuredRecord).filter(
-                StructuredRecord.id == int(record_id),
-                StructuredRecord.table_name == self.table_name
-            ).first()
+            records = session.query(StructuredRecord).filter(
+                StructuredRecord.table_name == self.table_name,
+                StructuredRecord.record_type == "随笔"
+            ).order_by(StructuredRecord.created_at.desc()).limit(10).all()
+            
+            if not records:
+                print("\n暂无随笔记录")
+                input("\n按回车键继续...")
+                return
+            
+            print(f"\n最近的 {len(records)} 条随笔记录：")
+            print("-"*60)
+            for i, rec in enumerate(records, 1):
+                fields = rec.structured_data.get('fields', {})
+                title = fields.get('title', '无标题')
+                content_preview = fields.get('content', rec.original_text)[:50] + '...' if len(fields.get('content', rec.original_text)) > 50 else fields.get('content', rec.original_text)
+                date_str = fields.get('date', '')
+                
+                print(f"\n[{i}] ID: {rec.id}")
+                print(f"    标题: {title}")
+                print(f"    日期: {date_str}")
+                print(f"    内容预览: {content_preview}")
+            
+            print("\n" + "-"*60)
+            record_id = input("请输入要删除的记录ID（或输入序号）: ").strip()
+            
+            # 支持输入序号
+            if record_id.isdigit():
+                record_num = int(record_id)
+                if 1 <= record_num <= len(records):
+                    record = records[record_num - 1]
+                else:
+                    # 如果不是序号，尝试作为ID查找
+                    record = session.query(StructuredRecord).filter(
+                        StructuredRecord.id == record_num,
+                        StructuredRecord.table_name == self.table_name
+                    ).first()
+            else:
+                print("输入格式错误")
+                return
             
             if not record:
                 print("记录不存在")
+                return
+            
+            # 显示要删除的记录信息
+            fields = record.structured_data.get('fields', {})
+            print(f"\n要删除的记录:")
+            print(f"  ID: {record.id}")
+            print(f"  标题: {fields.get('title', '无标题')}")
+            print(f"  日期: {fields.get('date', '')}")
+            print(f"  内容预览: {fields.get('content', record.original_text)[:100]}...")
+            
+            confirm = input(f"\n确认删除记录 ID {record.id}？(y/n): ").strip().lower()
+            if confirm != 'y':
+                print("已取消")
                 return
             
             session.delete(record)
@@ -460,14 +566,16 @@ class EssayManager:
         print("切换表/目录")
         print("-"*60)
         
-        # 获取所有表
+        # 只获取当前业务类型（随笔）的表
         session = self.db.get_session()
         try:
-            tables = session.query(StructuredRecord.table_name).distinct().all()
+            tables = session.query(StructuredRecord.table_name).filter(
+                StructuredRecord.record_type == "随笔"
+            ).distinct().all()
             table_list = [t[0] for t in tables if t[0]]
             
             if table_list:
-                print("\n可用的表/目录：")
+                print("\n可用的表/目录（仅随笔业务）：")
                 for i, table in enumerate(table_list, 1):
                     marker = " ← 当前" if table == self.table_name else ""
                     print(f"  {i}. {table}{marker}")
@@ -476,8 +584,12 @@ class EssayManager:
             new_table = input("请输入新表名（直接回车保持当前）: ").strip()
             
             if new_table:
-                self.table_name = new_table
-                print(f"\n✓ 已切换到: {self.table_name}")
+                # 验证新表名是否属于当前业务类型
+                if new_table in table_list:
+                    self.table_name = new_table
+                    print(f"\n✓ 已切换到: {self.table_name}")
+                else:
+                    print(f"\n✗ 表 '{new_table}' 不存在或不属于随笔业务")
             else:
                 print("保持当前表")
         
@@ -489,18 +601,19 @@ class EssayManager:
     def list_tables(self):
         """查看所有表/目录"""
         print("\n" + "-"*60)
-        print("所有表/目录")
+        print("所有表/目录（仅随笔业务）")
         print("-"*60)
         
         session = self.db.get_session()
         try:
-            # 获取所有表及其记录数
+            # 只获取当前业务类型（随笔）的表及其记录数
             from sqlalchemy import func
             result = session.query(
                 StructuredRecord.table_name,
                 func.count(StructuredRecord.id).label('count')
             ).filter(
-                StructuredRecord.table_name.isnot(None)
+                StructuredRecord.table_name.isnot(None),
+                StructuredRecord.record_type == "随笔"
             ).group_by(StructuredRecord.table_name).all()
             
             if result:

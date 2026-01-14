@@ -487,17 +487,49 @@ class EmployeeManager:
         print("修改员工记录")
         print("-"*60)
         
-        record_id = input("请输入要修改的记录ID: ").strip()
-        if not record_id.isdigit():
-            print("ID格式错误")
-            return
-        
+        # 先显示最近的记录列表，方便用户选择
         session = self.db.get_session()
         try:
-            record = session.query(StructuredRecord).filter(
-                StructuredRecord.id == int(record_id),
-                StructuredRecord.table_name == self.table_name
-            ).first()
+            records = session.query(StructuredRecord).filter(
+                StructuredRecord.table_name == self.table_name,
+                StructuredRecord.record_type == "员工"
+            ).order_by(StructuredRecord.created_at.desc()).limit(10).all()
+            
+            if not records:
+                print("\n暂无员工记录")
+                input("\n按回车键继续...")
+                return
+            
+            print(f"\n最近的 {len(records)} 条员工记录：")
+            print("-"*60)
+            for i, rec in enumerate(records, 1):
+                fields = rec.structured_data.get('fields', {})
+                name = fields.get('name', '未知')
+                task = fields.get('task', '')
+                status = fields.get('status', '未知')
+                date_str = fields.get('date', '')
+                
+                print(f"\n[{i}] ID: {rec.id}")
+                print(f"    员工: {name} | 任务: {task}")
+                print(f"    状态: {status} | 日期: {date_str}")
+            
+            print("\n" + "-"*60)
+            record_id = input("请输入要修改的记录ID（或输入序号）: ").strip()
+            
+            # 支持输入序号
+            if record_id.isdigit():
+                record_num = int(record_id)
+                if 1 <= record_num <= len(records):
+                    record = records[record_num - 1]
+                else:
+                    # 如果不是序号，尝试作为ID查找
+                    record = session.query(StructuredRecord).filter(
+                        StructuredRecord.id == record_num,
+                        StructuredRecord.table_name == self.table_name
+                    ).first()
+            else:
+                print("输入格式错误")
+                return
             
             if not record:
                 print("记录不存在")
@@ -548,25 +580,65 @@ class EmployeeManager:
         print("删除员工记录")
         print("-"*60)
         
-        record_id = input("请输入要删除的记录ID: ").strip()
-        if not record_id.isdigit():
-            print("ID格式错误")
-            return
-        
-        confirm = input(f"确认删除记录 {record_id}？(y/n): ").strip().lower()
-        if confirm != 'y':
-            print("已取消")
-            return
-        
+        # 先显示最近的记录列表，方便用户选择
         session = self.db.get_session()
         try:
-            record = session.query(StructuredRecord).filter(
-                StructuredRecord.id == int(record_id),
-                StructuredRecord.table_name == self.table_name
-            ).first()
+            records = session.query(StructuredRecord).filter(
+                StructuredRecord.table_name == self.table_name,
+                StructuredRecord.record_type == "员工"
+            ).order_by(StructuredRecord.created_at.desc()).limit(10).all()
+            
+            if not records:
+                print("\n暂无员工记录")
+                input("\n按回车键继续...")
+                return
+            
+            print(f"\n最近的 {len(records)} 条员工记录：")
+            print("-"*60)
+            for i, rec in enumerate(records, 1):
+                fields = rec.structured_data.get('fields', {})
+                name = fields.get('name', '未知')
+                task = fields.get('task', '')
+                status = fields.get('status', '未知')
+                date_str = fields.get('date', '')
+                
+                print(f"\n[{i}] ID: {rec.id}")
+                print(f"    员工: {name} | 任务: {task}")
+                print(f"    状态: {status} | 日期: {date_str}")
+            
+            print("\n" + "-"*60)
+            record_id = input("请输入要删除的记录ID（或输入序号）: ").strip()
+            
+            # 支持输入序号
+            if record_id.isdigit():
+                record_num = int(record_id)
+                if 1 <= record_num <= len(records):
+                    record = records[record_num - 1]
+                else:
+                    # 如果不是序号，尝试作为ID查找
+                    record = session.query(StructuredRecord).filter(
+                        StructuredRecord.id == record_num,
+                        StructuredRecord.table_name == self.table_name
+                    ).first()
+            else:
+                print("输入格式错误")
+                return
             
             if not record:
                 print("记录不存在")
+                return
+            
+            # 显示要删除的记录信息
+            fields = record.structured_data.get('fields', {})
+            print(f"\n要删除的记录:")
+            print(f"  ID: {record.id}")
+            print(f"  员工: {fields.get('name', '未知')}")
+            print(f"  任务: {fields.get('task', '')}")
+            print(f"  状态: {fields.get('status', '未知')}")
+            
+            confirm = input(f"\n确认删除记录 ID {record.id}？(y/n): ").strip().lower()
+            if confirm != 'y':
+                print("已取消")
                 return
             
             session.delete(record)
@@ -587,14 +659,16 @@ class EmployeeManager:
         print("切换表/目录")
         print("-"*60)
         
-        # 获取所有表
+        # 只获取当前业务类型（员工）的表
         session = self.db.get_session()
         try:
-            tables = session.query(StructuredRecord.table_name).distinct().all()
+            tables = session.query(StructuredRecord.table_name).filter(
+                StructuredRecord.record_type == "员工"
+            ).distinct().all()
             table_list = [t[0] for t in tables if t[0]]
             
             if table_list:
-                print("\n可用的表/目录：")
+                print("\n可用的表/目录（仅员工业务）：")
                 for i, table in enumerate(table_list, 1):
                     marker = " ← 当前" if table == self.table_name else ""
                     print(f"  {i}. {table}{marker}")
@@ -603,8 +677,12 @@ class EmployeeManager:
             new_table = input("请输入新表名（直接回车保持当前）: ").strip()
             
             if new_table:
-                self.table_name = new_table
-                print(f"\n✓ 已切换到: {self.table_name}")
+                # 验证新表名是否属于当前业务类型
+                if new_table in table_list:
+                    self.table_name = new_table
+                    print(f"\n✓ 已切换到: {self.table_name}")
+                else:
+                    print(f"\n✗ 表 '{new_table}' 不存在或不属于员工业务")
             else:
                 print("保持当前表")
         
@@ -616,18 +694,19 @@ class EmployeeManager:
     def list_tables(self):
         """查看所有表/目录"""
         print("\n" + "-"*60)
-        print("所有表/目录")
+        print("所有表/目录（仅员工业务）")
         print("-"*60)
         
         session = self.db.get_session()
         try:
-            # 获取所有表及其记录数
+            # 只获取当前业务类型（员工）的表及其记录数
             from sqlalchemy import func
             result = session.query(
                 StructuredRecord.table_name,
                 func.count(StructuredRecord.id).label('count')
             ).filter(
-                StructuredRecord.table_name.isnot(None)
+                StructuredRecord.table_name.isnot(None),
+                StructuredRecord.record_type == "员工"
             ).group_by(StructuredRecord.table_name).all()
             
             if result:

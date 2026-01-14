@@ -664,14 +664,16 @@ class AccountingManager:
         print("切换表/目录")
         print("-"*60)
         
-        # 获取所有表
+        # 只获取当前业务类型（记账）的表
         session = self.db.get_session()
         try:
-            tables = session.query(StructuredRecord.table_name).distinct().all()
+            tables = session.query(StructuredRecord.table_name).filter(
+                StructuredRecord.record_type == "记账"
+            ).distinct().all()
             table_list = [t[0] for t in tables if t[0]]
             
             if table_list:
-                print("\n可用的表/目录：")
+                print("\n可用的表/目录（仅记账业务）：")
                 for i, table in enumerate(table_list, 1):
                     marker = " ← 当前" if table == self.table_name else ""
                     print(f"  {i}. {table}{marker}")
@@ -680,8 +682,12 @@ class AccountingManager:
             new_table = input("请输入新表名（直接回车保持当前）: ").strip()
             
             if new_table:
-                self.table_name = new_table
-                print(f"\n✓ 已切换到: {self.table_name}")
+                # 验证新表名是否属于当前业务类型
+                if new_table in table_list:
+                    self.table_name = new_table
+                    print(f"\n✓ 已切换到: {self.table_name}")
+                else:
+                    print(f"\n✗ 表 '{new_table}' 不存在或不属于记账业务")
             else:
                 print("保持当前表")
         
@@ -693,18 +699,19 @@ class AccountingManager:
     def list_tables(self):
         """查看所有表/目录"""
         print("\n" + "-"*60)
-        print("所有表/目录")
+        print("所有表/目录（仅记账业务）")
         print("-"*60)
         
         session = self.db.get_session()
         try:
-            # 获取所有表及其记录数
+            # 只获取当前业务类型（记账）的表及其记录数
             from sqlalchemy import func
             result = session.query(
                 StructuredRecord.table_name,
                 func.count(StructuredRecord.id).label('count')
             ).filter(
-                StructuredRecord.table_name.isnot(None)
+                StructuredRecord.table_name.isnot(None),
+                StructuredRecord.record_type == "记账"
             ).group_by(StructuredRecord.table_name).all()
             
             if result:
