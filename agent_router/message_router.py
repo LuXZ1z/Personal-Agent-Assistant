@@ -15,6 +15,7 @@ from shared.message_types import (
     TarotRequest, TarotResult
 )
 from agent_router.command_parser import CommandParser
+from shared.business_service import business_service, BusinessType
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -48,6 +49,25 @@ class MessageRouter:
             # 获取用户当前选择的表/目录
             table_name = self.user_tables.get(message.user_id or "")
             
+            # 检查是否是业务选择命令
+            business_type = business_service.parse_business_command(message.text)
+            if business_type:
+                # 设置用户选择的业务类型
+                if message.user_id:
+                    business_service.set_user_business(message.user_id, business_type)
+                    logger.info(f"用户 {message.user_id} 选择业务: {business_type.value}")
+                
+                # 发送响应消息
+                response = WeChatResponse(
+                    message_id=message.message_id,
+                    text=f"✅ 已切换到 {business_type.value} 业务\n\n现在您可以：\n- 直接输入内容进行记录\n- 使用查询命令查看记录\n- 使用总结命令分析数据"
+                )
+                self._send_response(response)
+                return
+            
+            # 获取用户当前选择的业务类型
+            user_business = business_service.get_user_business(message.user_id or "")
+            
             # 解析消息
             msg_type, parsed_data = self.command_parser.parse_message(
                 text=message.text,
@@ -55,7 +75,7 @@ class MessageRouter:
                 table_name=table_name
             )
             
-            logger.info(f"消息类型: {msg_type}, message_id: {message.message_id}")
+            logger.info(f"消息类型: {msg_type}, 业务类型: {user_business.value}, message_id: {message.message_id}")
             
             if msg_type == "navigate":
                 # 导航命令：更新用户选择的表/目录
@@ -106,14 +126,20 @@ class MessageRouter:
             
             else:
                 # 普通文本消息：发送到文本结构化队列
+                # 如果用户选择了业务类型，添加到消息中
                 raw_text_message = RawTextMessage(
                     message_id=message.message_id,
                     text=parsed_data["text"],
                     user_id=parsed_data.get("user_id"),
                     table_name=parsed_data.get("table_name")
                 )
-                self._send_to_queue("raw_text", raw_text_message.model_dump_json())
-                logger.info(f"文本消息已发送到结构化队列: {raw_text_message.message_id}")
+                
+                # 在消息中添加业务类型信息（通过metadata传递）
+                message_data = raw_text_message.model_dump()
+                message_data["business_type"] = user_business.value
+                
+                self._send_to_queue("raw_text", json.dumps(message_data, ensure_ascii=False))
+                logger.info(f"文本消息已发送到结构化队列: {raw_text_message.message_id}, 业务类型: {user_business.value}")
         
         except Exception as e:
             logger.error(f"路由消息失败: {e}")

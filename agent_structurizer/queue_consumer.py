@@ -3,8 +3,10 @@
 从raw_text队列消费消息，处理后发送到structured_data队列
 """
 import time
+import json
 import redis
 from redis.exceptions import RedisError
+from typing import Optional
 
 from shared.config import settings
 from shared.message_types import RawTextMessage, StructuredDataMessage
@@ -38,11 +40,24 @@ class StructurizerConsumer:
                 # 从raw_text队列消费消息
                 message_json = self.redis_client.brpop("raw_text", timeout=1)
                 if message_json:
-                    message = RawTextMessage.model_validate_json(message_json[1])
-                    logger.info(f"收到文本消息: {message.message_id}")
+                    # 解析消息（可能是RawTextMessage或包含business_type的字典）
+                    message_data = json.loads(message_json[1])
                     
-                    # 进行结构化处理
-                    structured_message = self.structurizer.structure(message)
+                    # 提取business_type（如果存在）
+                    business_type = message_data.get("business_type")
+                    
+                    # 创建RawTextMessage对象
+                    message = RawTextMessage(
+                        message_id=message_data.get("message_id"),
+                        text=message_data.get("text"),
+                        user_id=message_data.get("user_id"),
+                        table_name=message_data.get("table_name")
+                    )
+                    
+                    logger.info(f"收到文本消息: {message.message_id}, business_type={business_type}")
+                    
+                    # 进行结构化处理（传入business_type）
+                    structured_message = self.structurizer.structure(message, business_type=business_type)
                     
                     # 发送到structured_data队列
                     self.redis_client.lpush("structured_data", structured_message.model_dump_json())

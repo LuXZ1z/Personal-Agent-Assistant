@@ -166,14 +166,15 @@ def main():
         def run_server():
             uvicorn.run(
                 app,
-                host="0.0.0.0",
-                port=80,
-                log_level=settings.log_level.lower()
+                host=settings.server_host,
+                port=settings.server_port,
+                log_level=settings.log_level.lower(),
+                workers=settings.server_workers
             )
         
         server_thread = threading.Thread(target=run_server, daemon=True)
         server_thread.start()
-        logger.info("微信服务器已启动")
+        logger.info(f"微信服务器已启动: {settings.server_host}:{settings.server_port}")
         
         # 等待所有Agent运行
         agent_manager.wait()

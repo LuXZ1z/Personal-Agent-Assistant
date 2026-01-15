@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     log_file: Optional[str] = None
     
+    # 服务器配置
+    server_host: str = "0.0.0.0"
+    server_port: int = 80
+    server_workers: int = 1  # 生产环境建议设置为CPU核心数
+    
     def __init__(self, **kwargs):
         """初始化配置，确保目录存在"""
         super().__init__(**kwargs)

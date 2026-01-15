@@ -4,7 +4,8 @@ FastAPI服务器
 """
 import json
 import logging
-from fastapi import FastAPI, Request, HTTPException, Query
+import asyncio
+from fastapi import FastAPI, Request, HTTPException, Query, BackgroundTasks
 from fastapi.responses import Response, PlainTextResponse
 import uvicorn
 
@@ -12,6 +13,7 @@ from shared.config import settings
 from shared.message_types import WeChatMessage
 from agent_wechat.message_crypt import WeChatMessageCrypt, WeChatCryptError
 from agent_wechat.queue_client import QueueClient
+from agent_wechat.response_manager import ResponseManager
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -28,6 +30,9 @@ wxcpt = WeChatMessageCrypt(
 
 # 初始化队列客户端
 queue_client = QueueClient()
+
+# 初始化响应管理器
+response_manager = ResponseManager()
 
 
 @app.get("/ai-bot/callback/{botid}")
@@ -129,28 +134,68 @@ async def handle_message(
                 logger.warning("消息内容为空")
                 return PlainTextResponse(content="success", status_code=200)
             
-            # 创建微信消息对象
-            wechat_message = WeChatMessage(
-                text=content,
-                msgtype="text",
-                user_id=msg_data.get("from", {}).get("userid", "")
-            )
-            
-            # 发送到队列
-            queue_client.send_wechat_message(wechat_message)
-            logger.info(f"消息已发送到队列: {wechat_message.message_id}")
-            
-            # 等待响应（异步处理，这里先返回success）
-            # 实际响应会通过stream消息返回
-            return PlainTextResponse(content="success", status_code=200)
+            try:
+                # 创建微信消息对象
+                wechat_message = WeChatMessage(
+                    text=content,
+                    msgtype="text",
+                    user_id=msg_data.get("from", {}).get("userid", "")
+                )
+                
+                # 创建stream
+                stream_id = response_manager.create_stream(wechat_message.message_id)
+                # 建立message_id到stream_id的映射
+                response_manager.link_message_to_stream(wechat_message.message_id, stream_id)
+                
+                # 发送到队列
+                queue_client.send_wechat_message(wechat_message)
+                logger.info(f"消息已发送到队列: {wechat_message.message_id}, stream_id={stream_id}")
+                
+                # 立即返回stream消息（微信要求）
+                stream_content = "正在处理您的消息..."
+                stream_json = _make_text_stream(stream_id, stream_content, finish=False)
+                encrypted_response = wxcpt.encrypt_msg(stream_json, nonce=nonce, timestamp=timestamp)
+                
+                return PlainTextResponse(content=encrypted_response, media_type="text/plain")
+            except Exception as e:
+                logger.error(f"处理文本消息失败: {e}", exc_info=True)
+                # 即使失败也要返回success，避免微信重试
+                return PlainTextResponse(content="success", status_code=200)
         
         # 处理stream消息（用于获取处理进度）
         elif msgtype == "stream":
             stream_id = msg_data.get("stream", {}).get("id", "")
             if stream_id:
-                logger.info(f"收到stream消息: stream_id={stream_id}")
-                # 这里可以处理stream消息，暂时返回success
-                return PlainTextResponse(content="success", status_code=200)
+                try:
+                    logger.info(f"收到stream轮询: stream_id={stream_id}")
+                    
+                    # 处理响应队列（检查是否有新的响应）
+                    response_manager.process_response_queue()
+                    
+                    # 获取stream当前状态
+                    stream_info = response_manager.get_stream(stream_id)
+                    if stream_info:
+                        stream_json = _make_text_stream(
+                            stream_id, 
+                            stream_info["content"], 
+                            finish=stream_info["finish"]
+                        )
+                        encrypted_response = wxcpt.encrypt_msg(stream_json, nonce=nonce, timestamp=timestamp)
+                        return PlainTextResponse(content=encrypted_response, media_type="text/plain")
+                    else:
+                        # stream不存在或已过期，返回完成状态
+                        stream_json = _make_text_stream(stream_id, "处理完成", finish=True)
+                        encrypted_response = wxcpt.encrypt_msg(stream_json, nonce=nonce, timestamp=timestamp)
+                        return PlainTextResponse(content=encrypted_response, media_type="text/plain")
+                except Exception as e:
+                    logger.error(f"处理stream消息失败: {e}", exc_info=True)
+                    # 返回完成状态，避免微信继续轮询
+                    try:
+                        stream_json = _make_text_stream(stream_id, "处理完成", finish=True)
+                        encrypted_response = wxcpt.encrypt_msg(stream_json, nonce=nonce, timestamp=timestamp)
+                        return PlainTextResponse(content=encrypted_response, media_type="text/plain")
+                    except:
+                        return PlainTextResponse(content="success", status_code=200)
         
         return PlainTextResponse(content="success", status_code=200)
         
@@ -168,11 +213,53 @@ async def health_check():
     return {"status": "ok", "service": "wechat_agent"}
 
 
+def _make_text_stream(stream_id: str, content: str, finish: bool) -> str:
+    """
+    创建文本stream消息格式
+    
+    Args:
+        stream_id: stream ID
+        content: 消息内容
+        finish: 是否完成
+        
+    Returns:
+        JSON字符串
+    """
+    stream_data = {
+        "msgtype": "stream",
+        "stream": {
+            "id": stream_id,
+            "finish": finish,
+            "content": content
+        }
+    }
+    return json.dumps(stream_data, ensure_ascii=False)
+
+
+@app.on_event("startup")
+async def startup_event():
+    """应用启动时的后台任务"""
+    logger.info("启动响应队列处理后台任务")
+    asyncio.create_task(background_response_processor())
+
+
+async def background_response_processor():
+    """后台处理响应队列的任务"""
+    while True:
+        try:
+            response_manager.process_response_queue()
+            await asyncio.sleep(0.5)  # 每0.5秒检查一次
+        except Exception as e:
+            logger.error(f"后台响应处理异常: {e}")
+            await asyncio.sleep(1)
+
+
 if __name__ == "__main__":
     uvicorn.run(
         app,
-        host="0.0.0.0",
-        port=80,
-        log_level=settings.log_level.lower()
+        host=settings.server_host,
+        port=settings.server_port,
+        log_level=settings.log_level.lower(),
+        workers=settings.server_workers
     )
 
