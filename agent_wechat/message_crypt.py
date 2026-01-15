@@ -9,6 +9,7 @@ import random
 import socket
 import struct
 import time
+import xml.etree.ElementTree as ET
 from typing import Tuple, Optional
 from Crypto.Cipher import AES
 
@@ -300,10 +301,44 @@ class WeChatMessageCrypt:
             解密后的明文
         """
         try:
-            # 解析JSON
-            json_data = json.loads(post_data.decode('utf-8'))
-            encrypt = json_data.get('encrypt')
+            # 调试：打印原始POST数据
+            logger.debug(f"POST数据长度: {len(post_data)}, 内容: {post_data[:200]}")
+            
+            # 检查POST数据是否为空
+            if not post_data:
+                logger.error("POST数据为空")
+                raise WeChatCryptError("POST数据为空")
+            
+            # 尝试解析JSON或XML
+            post_str = post_data.decode('utf-8')
+            encrypt = None
+            
+            # 尝试JSON格式
+            try:
+                json_data = json.loads(post_str)
+                encrypt = json_data.get('encrypt')
+                logger.debug("使用JSON格式解析")
+            except json.JSONDecodeError:
+                # 尝试XML格式
+                try:
+                    xml_tree = ET.fromstring(post_str)
+                    encrypt_elem = xml_tree.find('Encrypt')
+                    if encrypt_elem is not None:
+                        encrypt = encrypt_elem.text
+                        logger.debug("使用XML格式解析")
+                    else:
+                        # 尝试查找其他可能的标签
+                        for elem in xml_tree.iter():
+                            if elem.tag in ['encrypt', 'Encrypt']:
+                                encrypt = elem.text
+                                logger.debug("使用XML格式解析（找到encrypt标签）")
+                                break
+                except ET.ParseError:
+                    logger.error(f"既不是JSON也不是XML格式: {post_str[:200]}")
+                    raise WeChatCryptError("无法解析POST数据格式（既不是JSON也不是XML）")
+            
             if not encrypt:
+                logger.error(f"消息中缺少encrypt字段，原始数据: {post_str[:200]}")
                 raise WeChatCryptError("消息中缺少encrypt字段")
             
             # 验证签名

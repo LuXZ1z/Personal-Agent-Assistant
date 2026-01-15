@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # 微信配置
     wechat_token: str = ""
     wechat_encoding_aes_key: str = ""
+    wechat_corp_id: str = ""
+    wechat_corp_secret: str = ""
+    wechat_agent_id: int = 0
     
     # OpenAI配置
     openai_api_key: str = ""
@@ -38,6 +41,7 @@ class Settings(BaseSettings):
     
     # 数据库配置
     database_path: str = "./data/assistant.db"
+    user_database_dir: str = "./data/users"  # 用户数据库目录
     
     # 日志配置
     log_level: str = "INFO"

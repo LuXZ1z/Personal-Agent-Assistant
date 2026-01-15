@@ -6,10 +6,7 @@ import json
 import logging
 import asyncio
 import time
-import requests
 import xml.etree.ElementTree as ET
-from typing import Optional
-from datetime import datetime
 from fastapi import FastAPI, Request, HTTPException, Query, BackgroundTasks
 from fastapi.responses import Response, PlainTextResponse
 import uvicorn
@@ -21,9 +18,9 @@ from agent_wechat.queue_client import QueueClient
 from agent_wechat.response_manager import ResponseManager
 from agent_wechat.message_router import message_router
 from agent_wechat.session_manager import session_manager
-from agent_wechat.message_deduplicator import message_deduplicator
-from agent_wechat.task_manager import task_manager
 from shared.utils import setup_logger
+import requests
+from datetime import datetime
 
 logger = setup_logger(__name__)
 
@@ -55,80 +52,6 @@ CORP_SECRET = settings.wechat_corp_secret
 AGENT_ID = settings.wechat_agent_id
 
 
-def get_access_token() -> Optional[str]:
-    """获取企业微信 access_token（带缓存）"""
-    current_time = datetime.now().timestamp()
-    
-    # 如果 token 还没过期，直接返回
-    if access_token_cache['token'] and current_time < access_token_cache['expires_at']:
-        return access_token_cache['token']
-    
-    # 请求新的 access_token
-    try:
-        url = f'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={CORP_ID}&corpsecret={CORP_SECRET}'
-        response = requests.get(url, timeout=10)
-        response.raise_for_status()
-        
-        result = response.json()
-        if 'access_token' in result:
-            access_token_cache['token'] = result['access_token']
-            # 提前 5 分钟过期，避免边界问题
-            access_token_cache['expires_at'] = current_time + result.get('expires_in', 7200) - 300
-            logger.info(f"✓ 获取 access_token 成功")
-            return access_token_cache['token']
-        else:
-            logger.error(f"✗ 获取 access_token 失败: {result.get('errmsg')}")
-            return None
-    except Exception as e:
-        logger.error(f"✗ 请求 access_token 异常: {e}")
-        return None
-
-
-def send_text_message(user_id: str, content: str) -> bool:
-    """
-    主动发送文本消息到企业微信
-    
-    Args:
-        user_id: 用户 ID
-        content: 消息内容
-        
-    Returns:
-        是否发送成功
-    """
-    access_token = get_access_token()
-    if not access_token:
-        logger.error("✗ 无法获取 access_token，消息发送失败")
-        return False
-    
-    try:
-        url = f'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={access_token}'
-        data = {
-            "touser": user_id,
-            "msgtype": "text",
-            "agentid": AGENT_ID,
-            "text": {
-                "content": content
-            },
-            "safe": 0,
-            "enable_id_trans": 0,
-            "enable_duplicate_check": 0,
-        }
-        
-        response = requests.post(url, json=data, timeout=10)
-        response.raise_for_status()
-        
-        result = response.json()
-        if result.get('errcode') == 0:
-            logger.info(f"✓ 消息发送成功: user_id={user_id}, content_length={len(content)}")
-            return True
-        else:
-            logger.error(f"✗ 消息发送失败: {result.get('errmsg')}, errcode={result.get('errcode')}")
-            return False
-    except Exception as e:
-        logger.error(f"✗ 发送消息异常: {e}")
-        return False
-
-
 @app.get("/ai-bot/callback/{botid}")
 async def verify_url(
     request: Request,
@@ -138,7 +61,19 @@ async def verify_url(
     nonce: str = Query(...),
     echostr: str = Query(...)
 ):
-    """微信URL验证接口（GET请求）"""
+    """
+    微信URL验证接口（GET请求）
+    
+    Args:
+        botid: 机器人ID
+        msg_signature: 消息签名
+        timestamp: 时间戳
+        nonce: 随机字符串
+        echostr: 加密的随机字符串
+        
+    Returns:
+        解密后的随机字符串
+    """
     try:
         logger.info(f"收到URL验证请求: botid={botid}")
         
@@ -168,13 +103,25 @@ async def handle_message(
     timestamp: str = Query(...),
     nonce: str = Query(...)
 ):
-    """处理微信消息（POST请求）"""
+    """
+    处理微信消息（POST请求）
+    
+    Args:
+        botid: 机器人ID
+        msg_signature: 消息签名
+        timestamp: 时间戳
+        nonce: 随机字符串
+        
+    Returns:
+        加密后的响应消息
+    """
     try:
         logger.info(f"收到消息: botid={botid}, timestamp={timestamp}")
         
         # 读取POST数据
         post_data = await request.body()
         logger.info(f"POST数据长度: {len(post_data)} 字节")
+        logger.debug(f"POST数据内容: {post_data[:500]}")  # 打印前500字节
         
         # 检查POST数据是否为空
         if not post_data:
@@ -245,61 +192,28 @@ async def handle_message(
                 logger.warning("用户ID为空")
                 return PlainTextResponse(content="success", status_code=200)
             
-            # 检查消息是否重复（微信重试机制）
-            if message_deduplicator.is_duplicate(user_id, msg_id, content):
-                logger.info(f"检测到重复消息，跳过处理: user_id={user_id}, msg_id={msg_id}")
-                return PlainTextResponse(content="success", status_code=200)
-            
             try:
                 logger.info(f"处理消息: user_id={user_id}, content={content[:50]}")
                 
-                # 检查是否需要调用LLM（通过检查业务类型和内容）
-                session = session_manager.get_session(user_id)
-                needs_llm = False
-                task_type = None
-                
-                if session.business_type == "tarot":
-                    # 检查是否在占卜状态（不是主菜单）
-                    if session.sub_menu in ["single", "three_card", "five_card"]:
-                        # 检查内容不是"0"（返回菜单）
-                        if content.strip() != "0":
-                            needs_llm = True
-                            task_type = f"tarot_{session.sub_menu}"
-                
-                # 如果需要调用LLM，先发送"正在处理"消息
-                if needs_llm:
-                    processing_message = f"⏳ 正在调用大模型处理中...\n\n任务类型: {task_type}\n内容: {content[:50]}\n\n请稍候，处理完成后会立即返回结果"
-                    send_text_message(user_id, processing_message)
-                    logger.info(f"已发送正在处理消息: user_id={user_id}")
-                
-                # 使用消息路由器处理消息（会检查任务状态）
+                # 使用消息路由器处理消息
                 result = message_router.route_message(user_id, content)
                 
                 # 获取响应消息
                 if result.get("type") == "error":
                     response_message = f"❌ {result.get('message', '处理失败')}"
-                elif result.get("type") == "processing":
-                    # 如果返回processing类型，说明任务正在处理中
-                    response_message = result.get("message", "正在处理中...")
                 else:
                     response_message = result.get("message", "处理完成")
                 
                 logger.info(f"路由结果: type={result.get('type')}, message长度={len(response_message)}")
                 logger.debug(f"响应消息内容: {response_message[:200]}")
                 
-                # 如果之前已经发送了"正在处理"消息，且现在返回的是最终结果，直接发送结果
-                # 如果返回的是processing类型，说明任务还在处理中，不发送（因为之前已经发送了）
-                if needs_llm and result.get("type") == "processing":
-                    # 任务正在处理中，不发送重复消息
-                    logger.info(f"任务正在处理中，跳过发送: user_id={user_id}")
+                # 使用主动发送 API 发送消息（企业微信智能机器人推荐方式）
+                success = send_text_message(user_id, response_message)
+                
+                if success:
+                    logger.info(f"✓ 消息发送成功: user_id={user_id}, response_length={len(response_message)}")
                 else:
-                    # 使用主动发送 API 发送消息（企业微信推荐方式）
-                    success = send_text_message(user_id, response_message)
-                    
-                    if success:
-                        logger.info(f"✓ 消息发送成功: user_id={user_id}, response_length={len(response_message)}")
-                    else:
-                        logger.error(f"✗ 消息发送失败: user_id={user_id}")
+                    logger.error(f"✗ 消息发送失败: user_id={user_id}")
                 
                 # 返回 success 告诉企业微信我们已经处理了
                 return PlainTextResponse(content="success", status_code=200)
@@ -364,7 +278,17 @@ async def health_check():
 
 
 def _make_text_stream(stream_id: str, content: str, finish: bool) -> str:
-    """创建文本stream消息格式"""
+    """
+    创建文本stream消息格式
+    
+    Args:
+        stream_id: stream ID
+        content: 消息内容
+        finish: 是否完成
+        
+    Returns:
+        JSON字符串
+    """
     stream_data = {
         "msgtype": "stream",
         "stream": {
@@ -381,8 +305,6 @@ async def startup_event():
     """应用启动时的后台任务"""
     logger.info("启动响应队列处理后台任务")
     asyncio.create_task(background_response_processor())
-    logger.info("启动任务清理后台任务")
-    asyncio.create_task(background_task_cleanup())
 
 
 async def background_response_processor():
@@ -394,17 +316,6 @@ async def background_response_processor():
         except Exception as e:
             logger.error(f"后台响应处理异常: {e}")
             await asyncio.sleep(1)
-
-
-async def background_task_cleanup():
-    """后台清理已完成的任务"""
-    while True:
-        try:
-            task_manager.cleanup_completed_tasks(max_age=300)  # 清理5分钟前的任务
-            await asyncio.sleep(60)  # 每60秒清理一次
-        except Exception as e:
-            logger.error(f"后台任务清理异常: {e}")
-            await asyncio.sleep(60)
 
 
 if __name__ == "__main__":
