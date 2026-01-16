@@ -184,7 +184,7 @@ Type=simple
 User=your-username  # 替换为你的用户名
 WorkingDirectory=/opt/personal-assistant
 Environment="PATH=/opt/personal-assistant/venv/bin"
-ExecStart=/opt/personal-assistant/venv/bin/python main.py
+ExecStart=/opt/personal-assistant/venv/bin/python -m interfaces.wechat.server
 Restart=always
 RestartSec=10
 
