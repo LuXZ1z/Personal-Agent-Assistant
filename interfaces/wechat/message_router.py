@@ -112,7 +112,7 @@ class MessageRouter:
 
 """
                     # 获取子菜单
-                    service = self._get_business_service(user_id, result["business_type"])
+                    service = self._get_business_service(bot_id, user_id, result["business_type"])
                     if service:
                         sub_menu_result = service.process_message("", session.context)
                         # 合并消息
@@ -129,7 +129,7 @@ class MessageRouter:
         
         # 3. 路由到对应的业务服务
         try:
-            service = self._get_business_service(user_id, business_type)
+            service = self._get_business_service(bot_id, user_id, business_type)
             if service is None:
                 return {
                     "type": "error",
@@ -147,13 +147,14 @@ class MessageRouter:
                 "message": f"处理消息时发生错误: {str(e)}"
             }
     
-    def _get_business_service(self, user_id: str, business_type: str):
+    def _get_business_service(self, bot_id: str, user_id: str, business_type: str):
         """
         获取业务服务实例（动态加载，使用统一配置）
         注意：Service层已经包装了Manager，并复用了Manager的核心业务逻辑
         这样可以确保wechat.server和cli.main使用相同的业务逻辑
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
             business_type: 业务类型
             
@@ -172,8 +173,8 @@ class MessageRouter:
             module = importlib.import_module(module_path)
             service_class = getattr(module, class_name)
             
-            # 创建实例
-            return service_class(user_id)
+            # 创建实例，传递bot_id
+            return service_class(user_id, bot_id)
         except Exception as e:
             logger.error(f"加载业务服务失败: business_type={business_type}, error={e}", exc_info=True)
             return None

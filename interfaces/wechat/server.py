@@ -103,20 +103,28 @@ def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
     Returns:
         是否发送成功
     """
+    send_start_time = time.time()
+    logger.info(f"[发送消息] 开始发送: bot_id={bot_id}, user_id={user_id}, content_length={len(content)}")
+    
+    logger.info(f"[发送消息] 步骤1: 获取 access_token...")
     access_token = get_access_token(bot_id)
     if not access_token:
-        logger.error(f"✗ 无法获取机器人 {bot_id} access_token，消息发送失败")
+        logger.error(f"[发送消息] ✗ 无法获取机器人 {bot_id} access_token，消息发送失败")
         return False
+    logger.info(f"[发送消息] ✓ access_token 获取成功: {access_token[:20]}...")
     
     # 获取机器人配置
     try:
+        logger.info(f"[发送消息] 步骤2: 获取机器人配置...")
         bot_config = bot_manager.get_bot_config(bot_id)
         agent_id = bot_config['wechat_agent_id']
+        logger.info(f"[发送消息] ✓ 机器人配置获取成功: agent_id={agent_id}")
     except ValueError as e:
-        logger.error(f"获取机器人配置失败: {e}")
+        logger.error(f"[发送消息] ✗ 获取机器人配置失败: {e}")
         return False
     
     try:
+        logger.info(f"[发送消息] 步骤3: 构造请求数据...")
         url = f'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={access_token}'
         data = {
             "touser": user_id,
@@ -129,19 +137,32 @@ def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
             "enable_id_trans": 0,
             "enable_duplicate_check": 0,
         }
+        logger.info(f"[发送消息] 请求URL: {url}")
+        logger.debug(f"[发送消息] 请求数据: {json.dumps(data, ensure_ascii=False)[:200]}...")
         
+        logger.info(f"[发送消息] 步骤4: 发送HTTP请求...")
         response = requests.post(url, json=data, timeout=10)
+        logger.info(f"[发送消息] HTTP响应状态码: {response.status_code}")
         response.raise_for_status()
         
         result = response.json()
+        logger.info(f"[发送消息] 响应结果: {json.dumps(result, ensure_ascii=False)}")
+        
         if result.get('errcode') == 0:
-            logger.info(f"✓ 消息发送成功: bot_id={bot_id}, user_id={user_id}, content_length={len(content)}")
+            elapsed = time.time() - send_start_time
+            logger.info(f"[发送消息] ✓ 消息发送成功: bot_id={bot_id}, user_id={user_id}, content_length={len(content)}, 耗时={elapsed:.3f}秒")
             return True
         else:
-            logger.error(f"✗ 消息发送失败: {result.get('errmsg')}, errcode={result.get('errcode')}")
+            logger.error(f"[发送消息] ✗ 消息发送失败: errmsg={result.get('errmsg')}, errcode={result.get('errcode')}")
             return False
+    except requests.exceptions.Timeout as e:
+        logger.error(f"[发送消息] ✗ 请求超时: {e}")
+        return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"[发送消息] ✗ 请求异常: {e}")
+        return False
     except Exception as e:
-        logger.error(f"✗ 发送消息异常: {e}")
+        logger.error(f"[发送消息] ✗ 发送消息异常: {e}", exc_info=True)
         return False
 
 
@@ -192,34 +213,53 @@ async def handle_message(
     nonce: str = Query(...)
 ):
     """处理微信消息（POST请求）"""
+    request_start_time = time.time()
     try:
-        logger.info(f"收到消息: botid={botid}, timestamp={timestamp}")
+        logger.info(f"======== 收到消息请求 ========")
+        logger.info(f"botid={botid}, timestamp={timestamp}, nonce={nonce}")
+        logger.info(f"msg_signature={msg_signature[:20]}...")
         
         # 获取机器人的加解密器
         try:
             wxcpt = bot_manager.get_crypt(botid)
+            logger.info(f"✓ 成功获取机器人 {botid} 的加解密器")
         except ValueError as e:
-            logger.error(f"无效的botid: {botid}, {e}")
+            logger.error(f"✗ 无效的botid: {botid}, {e}")
             return PlainTextResponse(content="invalid bot", status_code=404)
+        except Exception as e:
+            logger.error(f"✗ 获取加解密器失败: {e}", exc_info=True)
+            return PlainTextResponse(content="invalid bot", status_code=500)
         
         # 读取POST数据
-        post_data = await request.body()
-        logger.info(f"POST数据长度: {len(post_data)} 字节")
+        try:
+            post_data = await request.body()
+            logger.info(f"✓ POST数据读取成功: {len(post_data)} 字节")
+        except Exception as e:
+            logger.error(f"✗ 读取POST数据失败: {e}", exc_info=True)
+            return PlainTextResponse(content="success", status_code=200)
         
         # 检查POST数据是否为空
         if not post_data:
-            logger.error("POST数据为空，忽略此请求")
+            logger.error("✗ POST数据为空，忽略此请求")
             return PlainTextResponse(content="success", status_code=200)
         
         # 解密消息
-        decrypted_msg = wxcpt.decrypt_msg(
-            post_data=post_data,
-            msg_signature=msg_signature,
-            timestamp=timestamp,
-            nonce=nonce
-        )
-        
-        logger.debug(f"解密后的消息: {decrypted_msg}")
+        try:
+            logger.info(f"开始解密消息...")
+            decrypted_msg = wxcpt.decrypt_msg(
+                post_data=post_data,
+                msg_signature=msg_signature,
+                timestamp=timestamp,
+                nonce=nonce
+            )
+            logger.info(f"✓ 消息解密成功，长度: {len(decrypted_msg)} 字符")
+            logger.debug(f"解密后的消息前100字符: {decrypted_msg[:100] if decrypted_msg else 'None'}")
+        except WeChatCryptError as e:
+            logger.error(f"✗ 消息解密失败 (WeChatCryptError): {e}", exc_info=True)
+            return PlainTextResponse(content="success", status_code=200)
+        except Exception as e:
+            logger.error(f"✗ 消息解密异常: {e}", exc_info=True)
+            return PlainTextResponse(content="success", status_code=200)
         
         # 解析消息（支持JSON和XML）
         msg_data = None
@@ -228,15 +268,18 @@ async def handle_message(
         user_id = ""
         msg_id = ""
         try:
+            logger.info(f"开始解析消息...")
             try:
                 msg_data = json.loads(decrypted_msg)
                 msgtype = msg_data.get("msgtype")
                 content = msg_data.get("text", {}).get("content", "")
                 user_id = msg_data.get("from", {}).get("userid", "")
                 msg_id = str(msg_data.get("msgid") or msg_data.get("MsgId") or "")
-                logger.debug("使用JSON格式解析消息")
+                logger.info(f"✓ 使用JSON格式解析消息成功")
+                logger.info(f"  msgtype={msgtype}, user_id={user_id}, msg_id={msg_id}, content={content[:50]}")
             except json.JSONDecodeError:
                 # 解析XML格式
+                logger.info(f"尝试使用XML格式解析...")
                 xml_tree = ET.fromstring(decrypted_msg)
                 msgtype_elem = xml_tree.find("MsgType")
                 if msgtype_elem is not None:
@@ -251,17 +294,19 @@ async def handle_message(
                 msg_id_elem = xml_tree.find("MsgId")
                 if msg_id_elem is not None:
                     msg_id = msg_id_elem.text
-                logger.debug("使用XML格式解析消息")
+                logger.info(f"✓ 使用XML格式解析消息成功")
+                logger.info(f"  msgtype={msgtype}, user_id={user_id}, msg_id={msg_id}, content={content[:50]}")
         except ET.ParseError as e:
-            logger.error(f"XML解析失败: {e}")
+            logger.error(f"✗ XML解析失败: {e}", exc_info=True)
             return PlainTextResponse(content="success", status_code=200)
         except Exception as e:
-            logger.error(f"消息解析失败: {e}")
+            logger.error(f"✗ 消息解析失败: {e}", exc_info=True)
             return PlainTextResponse(content="success", status_code=200)
         
         # 检查消息类型
+        logger.info(f"消息类型: {msgtype}")
         if msgtype not in ["text", "stream"]:
-            logger.info(f"不支持的消息类型: {msgtype}")
+            logger.info(f"✗ 不支持的消息类型: {msgtype}，忽略")
             return PlainTextResponse(content="success", status_code=200)
         
         # 处理文本消息
@@ -276,66 +321,33 @@ async def handle_message(
                 return PlainTextResponse(content="success", status_code=200)
             
             # 检查消息是否重复（微信重试机制）
-            if message_deduplicator.is_duplicate(user_id, msg_id, content):
-                logger.info(f"检测到重复消息，跳过处理: user_id={user_id}, msg_id={msg_id}")
+            logger.info(f"检查消息去重: user_id={user_id}, msg_id={msg_id}, content={content[:30]}")
+            is_dup = message_deduplicator.is_duplicate(user_id, msg_id, content)
+            if is_dup:
+                logger.warning(f"⚠ 检测到重复消息，跳过处理: user_id={user_id}, msg_id={msg_id}, content={content[:30]}")
+                elapsed = time.time() - request_start_time
+                logger.info(f"请求处理完成（重复消息），耗时: {elapsed:.3f}秒")
                 return PlainTextResponse(content="success", status_code=200)
+            logger.info(f"✓ 消息未重复，继续处理")
             
             try:
-                logger.info(f"处理消息: botid={botid}, user_id={user_id}, content={content[:50]}")
+                logger.info(f"准备处理消息: botid={botid}, user_id={user_id}, content={content[:50]}")
                 
-                # 检查是否需要调用LLM（通过检查业务类型和内容）
-                session = session_manager.get_session(botid, user_id)
-                needs_llm = False
-                task_type = None
+                # 【关键修复】立即启动后台任务处理消息，然后马上返回success给微信
+                # 这样可以确保在5秒内返回响应，避免微信认为服务器超时
+                logger.info(f"创建后台任务...")
+                task = asyncio.create_task(
+                    _process_message_async(botid, user_id, content, msg_id)
+                )
+                logger.info(f"✓ 后台任务已创建: {task}")
                 
-                if session.business_type == "tarot":
-                    # 检查是否在占卜状态（不是主菜单）
-                    if session.sub_menu in ["single", "three_card", "five_card"]:
-                        # 检查内容不是"0"（返回菜单）
-                        if content.strip() != "0":
-                            needs_llm = True
-                            task_type = f"tarot_{session.sub_menu}"
-                
-                # 如果需要调用LLM，先发送"正在处理"消息
-                if needs_llm:
-                    processing_message = f"⏳ 正在调用大模型处理中...\n\n任务类型: {task_type}\n内容: {content[:50]}\n\n请稍候，处理完成后会立即返回结果"
-                    send_text_message(botid, user_id, processing_message)
-                    logger.info(f"已发送正在处理消息: botid={botid}, user_id={user_id}")
-                
-                # 使用消息路由器处理消息（会检查任务状态）
-                result = message_router.route_message(botid, user_id, content)
-                
-                # 获取响应消息
-                if result.get("type") == "error":
-                    response_message = f"❌ {result.get('message', '处理失败')}"
-                elif result.get("type") == "processing":
-                    # 如果返回processing类型，说明任务正在处理中
-                    response_message = result.get("message", "正在处理中...")
-                else:
-                    response_message = result.get("message", "处理完成")
-                
-                logger.info(f"路由结果: type={result.get('type')}, message长度={len(response_message)}")
-                logger.debug(f"响应消息内容: {response_message[:200]}")
-                
-                # 如果之前已经发送了"正在处理"消息，且现在返回的是最终结果，直接发送结果
-                # 如果返回的是processing类型，说明任务还在处理中，不发送（因为之前已经发送了）
-                if needs_llm and result.get("type") == "processing":
-                    # 任务正在处理中，不发送重复消息
-                    logger.info(f"任务正在处理中，跳过发送: botid={botid}, user_id={user_id}")
-                else:
-                    # 使用主动发送 API 发送消息（企业微信推荐方式）
-                    success = send_text_message(botid, user_id, response_message)
-                    
-                    if success:
-                        logger.info(f"✓ 消息发送成功: botid={botid}, user_id={user_id}, response_length={len(response_message)}")
-                    else:
-                        logger.error(f"✗ 消息发送失败: botid={botid}, user_id={user_id}")
-                
-                # 返回 success 告诉企业微信我们已经处理了
+                elapsed = time.time() - request_start_time
+                logger.info(f"✓ 立即返回响应，耗时: {elapsed:.3f}秒")
+                # 立即返回 success 告诉企业微信我们已经收到消息
                 return PlainTextResponse(content="success", status_code=200)
                 
             except Exception as e:
-                logger.error(f"处理文本消息失败: {e}", exc_info=True)
+                logger.error(f"处理文本消息失败: botid={botid}, user_id={user_id}, content={content[:30]}, error={e}", exc_info=True)
                 # 即使失败也要返回success，避免微信重试
                 return PlainTextResponse(content="success", status_code=200)
         
@@ -377,13 +389,17 @@ async def handle_message(
                     except:
                         return PlainTextResponse(content="success", status_code=200)
         
+        elapsed = time.time() - request_start_time
+        logger.info(f"请求处理完成，总耗时: {elapsed:.3f}秒")
         return PlainTextResponse(content="success", status_code=200)
         
     except WeChatCryptError as e:
-        logger.error(f"消息处理失败: {e}")
+        elapsed = time.time() - request_start_time
+        logger.error(f"✗ 消息处理失败 (WeChatCryptError): {e}, 耗时: {elapsed:.3f}秒", exc_info=True)
         return PlainTextResponse(content="success", status_code=200)  # 微信要求返回success
     except Exception as e:
-        logger.error(f"消息处理异常: {e}")
+        elapsed = time.time() - request_start_time
+        logger.error(f"✗ 消息处理异常: {e}, 耗时: {elapsed:.3f}秒", exc_info=True)
         return PlainTextResponse(content="success", status_code=200)
 
 
@@ -404,6 +420,92 @@ def _make_text_stream(stream_id: str, content: str, finish: bool) -> str:
         }
     }
     return json.dumps(stream_data, ensure_ascii=False)
+
+
+async def _process_message_async(bot_id: str, user_id: str, content: str, msg_id: str):
+    """
+    后台异步处理消息
+    这个函数在后台运行，不会阻塞主请求
+    """
+    process_start_time = time.time()
+    try:
+        logger.info(f"[后台任务] ======== 开始处理消息 ========")
+        logger.info(f"[后台任务] botid={bot_id}, user_id={user_id}, content={content[:50]}, msg_id={msg_id}")
+        
+        # 检查是否需要调用LLM（通过检查业务类型和内容）
+        logger.info(f"[后台任务] 步骤1: 获取会话状态...")
+        session = session_manager.get_session(bot_id, user_id)
+        logger.info(f"[后台任务] ✓ 会话状态: business_type={session.business_type}, sub_menu={session.sub_menu}")
+        needs_llm = False
+        task_type = None
+        
+        if session.business_type == "tarot":
+            # 检查是否在占卜状态（不是主菜单）
+            if session.sub_menu in ["single", "three_card", "five_card"]:
+                # 检查内容不是"0"（返回菜单）
+                if content.strip() != "0":
+                    needs_llm = True
+                    task_type = f"tarot_{session.sub_menu}"
+                    logger.info(f"[后台任务] 需要调用LLM: task_type={task_type}")
+        
+        # 如果需要调用LLM，先发送"正在处理"消息
+        if needs_llm:
+            processing_message = f"⏳ 正在调用大模型处理中...\n\n任务类型: {task_type}\n内容: {content[:50]}\n\n请稍候，处理完成后会立即返回结果"
+            logger.info(f"[后台任务] 步骤2: 发送正在处理消息...")
+            # 使用线程池执行同步调用，避免阻塞事件循环
+            await asyncio.to_thread(send_text_message, bot_id, user_id, processing_message)
+            logger.info(f"[后台任务] ✓ 已发送正在处理消息")
+        
+        # 使用消息路由器处理消息（会检查任务状态）
+        # 在线程池中执行，因为route_message是同步的且可能耗时
+        logger.info(f"[后台任务] 步骤3: 调用消息路由器...")
+        result = await asyncio.to_thread(message_router.route_message, bot_id, user_id, content)
+        logger.info(f"[后台任务] ✓ 消息路由器返回: type={result.get('type')}, has_message={bool(result.get('message'))}")
+        logger.debug(f"[后台任务] 完整结果: {json.dumps(result, ensure_ascii=False)[:200]}...")
+        
+        # 获取响应消息
+        if result.get("type") == "error":
+            response_message = f"❌ {result.get('message', '处理失败')}"
+        elif result.get("type") == "processing":
+            # 如果返回processing类型，说明任务正在处理中
+            response_message = result.get("message", "正在处理中...")
+        else:
+            response_message = result.get("message", "处理完成")
+        
+        logger.info(f"[后台任务] 步骤4: 准备发送响应消息...")
+        logger.info(f"[后台任务] 响应消息类型: {result.get('type')}, 消息长度: {len(response_message)}")
+        logger.debug(f"[后台任务] 响应消息内容前200字符: {response_message[:200]}")
+        
+        # 如果之前已经发送了"正在处理"消息，且现在返回的是最终结果，直接发送结果
+        # 如果返回的是processing类型，说明任务还在处理中，不发送（因为之前已经发送了）
+        if needs_llm and result.get("type") == "processing":
+            # 任务正在处理中，不发送重复消息
+            logger.info(f"[后台任务] ⚠ 任务正在处理中，跳过发送（已发送正在处理消息）")
+        else:
+            # 使用主动发送 API 发送消息（企业微信推荐方式）
+            # 使用线程池执行同步调用，避免阻塞事件循环
+            logger.info(f"[后台任务] 发送响应消息到用户...")
+            success = await asyncio.to_thread(send_text_message, bot_id, user_id, response_message)
+            
+            if success:
+                logger.info(f"[后台任务] ✓ 响应消息发送成功: botid={bot_id}, user_id={user_id}, response_length={len(response_message)}")
+            else:
+                logger.error(f"[后台任务] ✗ 响应消息发送失败: botid={bot_id}, user_id={user_id}")
+        
+        elapsed = time.time() - process_start_time
+        logger.info(f"[后台任务] ======== 消息处理完成，总耗时: {elapsed:.3f}秒 ========")
+        
+    except Exception as e:
+        elapsed = time.time() - process_start_time
+        logger.error(f"[后台任务] ✗ 处理消息失败: botid={bot_id}, user_id={user_id}, content={content[:30]}, error={e}, 耗时={elapsed:.3f}秒", exc_info=True)
+        # 发送错误消息给用户
+        try:
+            error_message = f"❌ 处理消息时发生错误: {str(e)}"
+            logger.info(f"[后台任务] 尝试发送错误消息给用户...")
+            await asyncio.to_thread(send_text_message, bot_id, user_id, error_message)
+            logger.info(f"[后台任务] ✓ 错误消息已发送")
+        except Exception as send_error:
+            logger.error(f"[后台任务] ✗ 发送错误消息失败: {send_error}", exc_info=True)
 
 
 @app.on_event("startup")

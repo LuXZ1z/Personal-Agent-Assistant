@@ -24,8 +24,9 @@ logger = setup_logger(__name__)
 class TarotService:
     """塔罗牌服务 - 微信适配器，调用 Manager 的业务逻辑"""
     
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, bot_id: str = "default"):
         self.user_id = user_id
+        self.bot_id = bot_id
         # 使用 Manager 层，Manager 使用 core 的基础能力
         self.manager = TarotManager(user_id=user_id, debug=False)
         # Manager 已经初始化了这些，直接使用
@@ -56,11 +57,11 @@ class TarotService:
     
     def process_message(self, content: str, session_context: Dict[str, Any]) -> Dict[str, Any]:
         """处理塔罗牌消息"""
-        session = session_manager.get_session(self.user_id)
+        session = session_manager.get_session(self.bot_id, self.user_id)
         sub_menu = session.sub_menu
         
         if sub_menu is None:
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         if sub_menu == "main":
@@ -84,26 +85,26 @@ class TarotService:
         choice = content.strip()
         
         if choice == "0":
-            session_manager.reset_to_menu(self.user_id)
+            session_manager.reset_to_menu(self.bot_id, self.user_id)
             try:
                 from interfaces.wechat.menu_handler import MenuHandler
             except ImportError:
                 from interfaces.cli.menu import MenuHandler
             return MenuHandler.show_menu()
         elif choice == "1":
-            session_manager.set_sub_menu(self.user_id, "single")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "single")
             return {
                 "type": "prompt",
                 "message": "🔮 单张牌占卜\n\n单张牌占卜适合快速了解当前状况或某个问题的答案。\n\n你可以输入一个问题（可选），或直接发送\"抽牌\"开始抽牌\n\n发送\"0\"可返回子菜单"
             }
         elif choice == "2":
-            session_manager.set_sub_menu(self.user_id, "three_card")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "three_card")
             return {
                 "type": "prompt",
                 "message": "📜 三张牌占卜（过去-现在-未来）\n\n你可以输入一个问题（可选），或直接发送\"抽牌\"开始抽牌\n\n发送\"0\"可返回子菜单"
             }
         elif choice == "3":
-            session_manager.set_sub_menu(self.user_id, "five_card")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "five_card")
             return {
                 "type": "prompt",
                 "message": "⭐ 五张牌占卜（凯尔特十字简化版）\n\n你可以输入一个问题（可选），或直接发送\"抽牌\"开始抽牌\n\n发送\"0\"可返回子菜单"
@@ -119,13 +120,13 @@ class TarotService:
     def _handle_single_card(self, content: str) -> Dict[str, Any]:
         """处理单张牌占卜"""
         if content.strip() == "0":
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         question = content.strip() if content.strip() and content.strip() != "抽牌" else None
         
         # 检查是否已有任务在处理
-        task = task_manager.get_task(self.user_id)
+        task = task_manager.get_task(self.bot_id, self.user_id)
         if task and task.status == "processing":
             elapsed = task.get_elapsed_time()
             return {
@@ -134,7 +135,7 @@ class TarotService:
             }
         
         # 启动任务
-        task_manager.start_task(self.user_id, "tarot_single", question or "单张牌占卜")
+        task_manager.start_task(self.bot_id, self.user_id, "tarot_single", question or "单张牌占卜")
         
         try:
             # 抽牌
@@ -142,7 +143,7 @@ class TarotService:
             card = cards[0]
             
             # 检查任务是否已取消
-            task = task_manager.get_task(self.user_id)
+            task = task_manager.get_task(self.bot_id, self.user_id)
             if task and task.cancelled:
                 return {
                     "type": "info",
@@ -168,7 +169,7 @@ class TarotService:
             )
             
             # 再次检查任务是否已取消
-            task = task_manager.get_task(self.user_id)
+            task = task_manager.get_task(self.bot_id, self.user_id)
             if task and task.cancelled:
                 return {
                     "type": "info",
@@ -189,8 +190,8 @@ class TarotService:
             message += f"🌟 塔罗牌解读 🌟\n\n{interpretation}\n\n"
             message += f"发送\"0\"返回子菜单"
             
-            session_manager.set_sub_menu(self.user_id, "main")
-            task_manager.complete_task(self.user_id, {
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
+            task_manager.complete_task(self.bot_id, self.user_id, {
                 "card": card,
                 "question": question,
                 "interpretation": interpretation
@@ -203,7 +204,7 @@ class TarotService:
         
         except Exception as e:
             logger.error(f"单张牌占卜失败: {e}", exc_info=True)
-            task_manager.complete_task(self.user_id, None, error=str(e))
+            task_manager.complete_task(self.bot_id, self.user_id, None, error=str(e))
             return {
                 "type": "error",
                 "message": f"占卜失败: {str(e)}"
@@ -212,12 +213,12 @@ class TarotService:
     def _handle_three_card(self, content: str) -> Dict[str, Any]:
         """处理三张牌占卜"""
         if content.strip() == "0":
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         question = content.strip() if content.strip() and content.strip() != "抽牌" else None
         
-        task = task_manager.get_task(self.user_id)
+        task = task_manager.get_task(self.bot_id, self.user_id)
         if task and task.status == "processing":
             elapsed = task.get_elapsed_time()
             return {
@@ -225,12 +226,12 @@ class TarotService:
                 "message": f"⏳ 正在处理中...\n\n已处理时间: {elapsed:.1f}秒"
             }
         
-        task_manager.start_task(self.user_id, "tarot_three_card", question or "三张牌占卜")
+        task_manager.start_task(self.bot_id, self.user_id, "tarot_three_card", question or "三张牌占卜")
         
         try:
             cards = self.tarot_service.draw_spread(SpreadType.THREE_CARD)
             
-            task = task_manager.get_task(self.user_id)
+            task = task_manager.get_task(self.bot_id, self.user_id)
             if task and task.cancelled:
                 return {
                     "type": "info",
@@ -264,7 +265,7 @@ class TarotService:
                 max_tokens=2000
             )
             
-            task = task_manager.get_task(self.user_id)
+            task = task_manager.get_task(self.bot_id, self.user_id)
             if task and task.cancelled:
                 return {
                     "type": "info",
@@ -282,8 +283,8 @@ class TarotService:
             message += f"🌟 塔罗牌解读 🌟\n\n{interpretation}\n\n"
             message += f"发送\"0\"返回子菜单"
             
-            session_manager.set_sub_menu(self.user_id, "main")
-            task_manager.complete_task(self.user_id, {
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
+            task_manager.complete_task(self.bot_id, self.user_id, {
                 "cards": cards,
                 "question": question,
                 "interpretation": interpretation
@@ -296,7 +297,7 @@ class TarotService:
         
         except Exception as e:
             logger.error(f"三张牌占卜失败: {e}", exc_info=True)
-            task_manager.complete_task(self.user_id, None, error=str(e))
+            task_manager.complete_task(self.bot_id, self.user_id, None, error=str(e))
             return {
                 "type": "error",
                 "message": f"占卜失败: {str(e)}"
@@ -305,12 +306,12 @@ class TarotService:
     def _handle_five_card(self, content: str) -> Dict[str, Any]:
         """处理五张牌占卜"""
         if content.strip() == "0":
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         question = content.strip() if content.strip() and content.strip() != "抽牌" else None
         
-        task = task_manager.get_task(self.user_id)
+        task = task_manager.get_task(self.bot_id, self.user_id)
         if task and task.status == "processing":
             elapsed = task.get_elapsed_time()
             return {
@@ -318,12 +319,12 @@ class TarotService:
                 "message": f"⏳ 正在处理中...\n\n已处理时间: {elapsed:.1f}秒"
             }
         
-        task_manager.start_task(self.user_id, "tarot_five_card", question or "五张牌占卜")
+        task_manager.start_task(self.bot_id, self.user_id, "tarot_five_card", question or "五张牌占卜")
         
         try:
             cards = self.tarot_service.draw_spread(SpreadType.FIVE_CARD)
             
-            task = task_manager.get_task(self.user_id)
+            task = task_manager.get_task(self.bot_id, self.user_id)
             if task and task.cancelled:
                 return {
                     "type": "info",
@@ -359,7 +360,7 @@ class TarotService:
                 max_tokens=2500
             )
             
-            task = task_manager.get_task(self.user_id)
+            task = task_manager.get_task(self.bot_id, self.user_id)
             if task and task.cancelled:
                 return {
                     "type": "info",
@@ -379,8 +380,8 @@ class TarotService:
             message += f"🌟 塔罗牌解读 🌟\n\n{interpretation}\n\n"
             message += f"发送\"0\"返回子菜单"
             
-            session_manager.set_sub_menu(self.user_id, "main")
-            task_manager.complete_task(self.user_id, {
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
+            task_manager.complete_task(self.bot_id, self.user_id, {
                 "cards": cards,
                 "question": question,
                 "interpretation": interpretation
@@ -393,7 +394,7 @@ class TarotService:
         
         except Exception as e:
             logger.error(f"五张牌占卜失败: {e}", exc_info=True)
-            task_manager.complete_task(self.user_id, None, error=str(e))
+            task_manager.complete_task(self.bot_id, self.user_id, None, error=str(e))
             return {
                 "type": "error",
                 "message": f"占卜失败: {str(e)}"

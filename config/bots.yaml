@@ -3,24 +3,23 @@
 bots:
   test:
     name: "测试机器人"
-    wechat_token: "test_token_xxx"
-    wechat_encoding_aes_key: "test_aes_key_xxx"
-    wechat_corp_id: "wwxxx"
-    wechat_corp_secret: "secret_xxx"
-    wechat_agent_id: 1000001
+    wechat_token: "D5rTeopTJD1R8jllyG"
+    wechat_encoding_aes_key: "Dr2BzWXGjhY324iFI4dq61tApqGDcfTk3Uy3EdaubQ0"
+    wechat_corp_id: "ww0b4c690c4b9e8ab1"
+    wechat_corp_secret: "WJDYKn0-S2Haj1YJqpXWcCB2vu0qf7civj6h3sMFSU4"
+    wechat_agent_id: 1000002
     enabled: true
     # 功能列表：此机器人只开放3个功能
     features: 
       - accounting
-      - essay
       - tarot
     
-  prod:
-    name: "生产机器人"
-    wechat_token: "prod_token_xxx"
-    wechat_encoding_aes_key: "prod_aes_key_xxx"
-    wechat_corp_id: "wwyyy"
-    wechat_corp_secret: "secret_yyy"
+  family:
+    name: "家庭机器人"
+    wechat_token: "KDk3"
+    wechat_encoding_aes_key: "1XozMLeyK9ABAnazjU2R5Oe81cDO87R6aMRfGgjknUT"
+    wechat_corp_id: "ww6f04ea15ec4caa93"
+    wechat_corp_secret: "mlz3gxUfQK0qAf6Y6kn0TEu8DulkGG7FQgi5PJQpK8c"
     wechat_agent_id: 1000002
     enabled: true
     # 功能列表：此机器人开放全部功能
@@ -30,15 +29,15 @@ bots:
       - employee
       - tarot
     
-  hr:
-    name: "HR机器人"
-    wechat_token: "hr_token_xxx"
-    wechat_encoding_aes_key: "hr_aes_key_xxx"
-    wechat_corp_id: "wwzzz"
-    wechat_corp_secret: "secret_zzz"
-    wechat_agent_id: 1000003
-    enabled: true
-    # 功能列表：此机器人只开放员工管理
-    features:
-      - employee
+  # hr:
+  #   name: "HR机器人"
+  #   wechat_token: "hr_token_xxx"
+  #   wechat_encoding_aes_key: "hr_aes_key_xxx"
+  #   wechat_corp_id: "wwzzz"
+  #   wechat_corp_secret: "secret_zzz"
+  #   wechat_agent_id: 1000003
+  #   enabled: true
+  #   # 功能列表：此机器人只开放员工管理
+  #   features:
+  #     - employee
 

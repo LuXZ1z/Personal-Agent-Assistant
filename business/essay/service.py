@@ -17,14 +17,15 @@ logger = setup_logger(__name__)
 class EssayService:
     """随笔服务 - 微信适配器，调用 Manager 的业务逻辑"""
     
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, bot_id: str = "default"):
         self.user_id = user_id
+        self.bot_id = bot_id
         # 使用 Manager 层，Manager 使用 core 的基础能力
         self.manager = EssayManager(user_id=user_id, debug=False)
     
     def show_sub_menu(self) -> Dict[str, Any]:
         """显示随笔管理子菜单"""
-        session = session_manager.get_session(self.user_id)
+        session = session_manager.get_session(self.bot_id, self.user_id)
         table_name = session.table_name or self.manager.table_name
         
         menu_text = f"""
@@ -52,24 +53,24 @@ class EssayService:
     
     def process_message(self, content: str, session_context: Dict[str, Any]) -> Dict[str, Any]:
         """处理随笔消息"""
-        session = session_manager.get_session(self.user_id)
+        session = session_manager.get_session(self.bot_id, self.user_id)
         sub_menu = session.sub_menu
         
         if sub_menu is None:
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         if sub_menu == "main":
             choice = content.strip()
             if choice == "0":
-                session_manager.reset_to_menu(self.user_id)
+                session_manager.reset_to_menu(self.bot_id, self.user_id)
                 try:
                     from interfaces.wechat.menu_handler import MenuHandler
                 except ImportError:
                     from interfaces.cli.menu import MenuHandler
                 return MenuHandler.show_menu()
             elif choice == "1":
-                session_manager.set_sub_menu(self.user_id, "add")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "add")
                 return {
                     "type": "prompt",
                     "message": "✓ 已进入添加随笔模式\n\n请直接发送随笔内容（自然语言）\n\n发送\"0\"可返回子菜单"
@@ -83,7 +84,7 @@ class EssayService:
         
         elif sub_menu == "add":
             if content.strip() == "0":
-                session_manager.set_sub_menu(self.user_id, "main")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                 return self.show_sub_menu()
             
             try:
@@ -109,7 +110,7 @@ class EssayService:
                 message += f"🆔 记录ID: {record.id}\n\n"
                 message += f"发送\"0\"返回子菜单"
                 
-                session_manager.set_sub_menu(self.user_id, "main")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                 return {
                     "type": "success",
                     "message": message

@@ -161,3 +161,4 @@ class TarotService:
         
         return "\n".join(lines)
 
+

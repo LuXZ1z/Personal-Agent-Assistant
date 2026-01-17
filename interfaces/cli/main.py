@@ -106,7 +106,7 @@ class CLIMain:
         
         try:
             # 使用Service适配器，确保与微信服务器使用完全相同的业务逻辑
-            adapter = ServiceAdapter(user_id=self.user_id, business_type=business_type)
+            adapter = ServiceAdapter(bot_id=self.bot_id, user_id=self.user_id, business_type=business_type)
             adapter.run()
         except Exception as e:
             print(f"错误：加载业务Service失败: {e}")

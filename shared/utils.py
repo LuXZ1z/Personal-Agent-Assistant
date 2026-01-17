@@ -22,6 +22,10 @@ def setup_logger(name: str, log_file: Optional[str] = None) -> logging.Logger:
     Returns:
         配置好的日志记录器
     """
+    # 默认写入 settings.log_file，避免只在screen里看到日志导致排查困难
+    if log_file is None:
+        log_file = settings.log_file or None
+
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))
     
@@ -47,6 +51,9 @@ def setup_logger(name: str, log_file: Optional[str] = None) -> logging.Logger:
     )
     console_handler.setFormatter(color_formatter)
     logger.addHandler(console_handler)
+
+    # 避免日志向root传播导致重复输出（uvicorn等可能配置root handler）
+    logger.propagate = False
     
     # 文件handler（如果指定了日志文件）
     if log_file:

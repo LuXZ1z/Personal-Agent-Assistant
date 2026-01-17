@@ -19,20 +19,22 @@ logger = setup_logger(__name__)
 class AccountingService:
     """记账服务 - 微信适配器，调用 Manager 的业务逻辑"""
     
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, bot_id: str = "default"):
         """
         初始化记账服务
         
         Args:
             user_id: 用户ID
+            bot_id: 机器人ID（可选，默认为"default"）
         """
         self.user_id = user_id
+        self.bot_id = bot_id
         # 使用 Manager 层，Manager 使用 core 的基础能力
         self.manager = AccountingManager(user_id=user_id, debug=False)
     
     def show_sub_menu(self) -> Dict[str, Any]:
         """显示记账管理子菜单"""
-        session = session_manager.get_session(self.user_id)
+        session = session_manager.get_session(self.bot_id, self.user_id)
         table_name = session.table_name or self.manager.table_name
         
         menu_text = f"""
@@ -70,12 +72,12 @@ class AccountingService:
         Returns:
             处理结果字典
         """
-        session = session_manager.get_session(self.user_id)
+        session = session_manager.get_session(self.bot_id, self.user_id)
         sub_menu = session.sub_menu
         
         # 如果没有子菜单状态，显示子菜单
         if sub_menu is None:
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         # 处理子菜单选择
@@ -108,7 +110,7 @@ class AccountingService:
         choice = content.strip()
         
         if choice == "0":
-            session_manager.reset_to_menu(self.user_id)
+            session_manager.reset_to_menu(self.bot_id, self.user_id)
             # 延迟导入避免循环依赖
             try:
                 from interfaces.wechat.menu_handler import MenuHandler
@@ -116,28 +118,28 @@ class AccountingService:
                 from interfaces.cli.menu import MenuHandler
             return MenuHandler.show_menu()
         elif choice == "1":
-            session_manager.set_sub_menu(self.user_id, "add")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "add")
             return {
                 "type": "prompt",
                 "message": "✓ 已进入添加记账模式\n\n请直接发送记账信息（自然语言），例如：\n- 今天花了50元买了一杯咖啡\n- 在超市购物花费200元\n\n发送\"0\"可返回子菜单"
             }
         elif choice == "2":
-            session_manager.set_sub_menu(self.user_id, "query")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "query")
             return self._show_query_menu()
         elif choice == "3":
-            session_manager.set_sub_menu(self.user_id, "update")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "update")
             return {
                 "type": "prompt",
                 "message": "✓ 已进入修改记账模式\n\n请先发送要修改的记录ID，或发送\"0\"返回子菜单"
             }
         elif choice == "4":
-            session_manager.set_sub_menu(self.user_id, "delete")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "delete")
             return {
                 "type": "prompt",
                 "message": "✓ 已进入删除记账模式\n\n请先发送要删除的记录ID，或发送\"0\"返回子菜单"
             }
         elif choice == "5":
-            session_manager.set_sub_menu(self.user_id, "switch")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "switch")
             return {
                 "type": "prompt",
                 "message": "✓ 已进入切换表/目录模式\n\n请发送新的表/目录名称，或发送\"0\"返回子菜单"
@@ -145,7 +147,7 @@ class AccountingService:
         elif choice == "6":
             return self._handle_list_tables()
         elif choice == "7":
-            session_manager.set_sub_menu(self.user_id, "summarize")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "summarize")
             return self._show_summarize_menu()
         elif choice == "8":
             return self._handle_statistics()
@@ -158,7 +160,7 @@ class AccountingService:
     def _handle_add(self, content: str) -> Dict[str, Any]:
         """处理添加记账"""
         if content.strip() == "0":
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         if not content or not content.strip():
@@ -208,7 +210,7 @@ class AccountingService:
             message += f"发送\"0\"返回子菜单"
             
             # 重置到主菜单状态
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             
             return {
                 "type": "success",
@@ -241,7 +243,7 @@ class AccountingService:
 
 请输入数字选择（0-6）"""
         
-        session_manager.get_session(self.user_id).context["query_mode"] = "menu"
+        session_manager.get_session(self.bot_id, self.user_id).context["query_mode"] = "menu"
         return {
             "type": "sub_menu",
             "message": menu_text
@@ -249,12 +251,12 @@ class AccountingService:
     
     def _handle_query(self, content: str) -> Dict[str, Any]:
         """处理查询"""
-        session = session_manager.get_session(self.user_id)
+        session = session_manager.get_session(self.bot_id, self.user_id)
         query_mode = session.context.get("query_mode", "menu")
         
         if content.strip() == "0":
             if query_mode == "menu":
-                session_manager.set_sub_menu(self.user_id, "main")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                 return self.show_sub_menu()
             else:
                 session.context["query_mode"] = "menu"
@@ -323,7 +325,7 @@ class AccountingService:
                 message += f"    摘要: {summary}\n\n"
             
             message += "发送\"0\"返回子菜单"
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return {
                 "type": "success",
                 "message": message
@@ -370,7 +372,7 @@ class AccountingService:
                         message += f"    摘要: {summary}\n\n"
                     
                     message += "发送\"0\"返回子菜单"
-                    session_manager.set_sub_menu(self.user_id, "main")
+                    session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                     return {
                         "type": "success",
                         "message": message
@@ -408,7 +410,7 @@ class AccountingService:
                     message += f"... 还有 {len(records) - 10} 条记录\n\n"
                 
                 message += "发送\"0\"返回子菜单"
-                session_manager.set_sub_menu(self.user_id, "main")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                 return {
                     "type": "success",
                     "message": message
@@ -438,7 +440,7 @@ class AccountingService:
                     message += f"    金额: {amount}元 | 类别: {category} | 日期: {date_str}\n\n"
                 
                 message += "发送\"0\"返回子菜单"
-                session_manager.set_sub_menu(self.user_id, "main")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                 return {
                     "type": "success",
                     "message": message
@@ -459,7 +461,7 @@ class AccountingService:
     def _handle_update(self, content: str) -> Dict[str, Any]:
         """处理修改记账"""
         if content.strip() == "0":
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         return {
@@ -470,7 +472,7 @@ class AccountingService:
     def _handle_delete(self, content: str) -> Dict[str, Any]:
         """处理删除记账"""
         if content.strip() == "0":
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         try:
@@ -478,7 +480,7 @@ class AccountingService:
             success = self.manager.db.delete_record(record_id, user_id=self.user_id)
             
             if success:
-                session_manager.set_sub_menu(self.user_id, "main")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                 return {
                     "type": "success",
                     "message": f"✓ 记录 ID {record_id} 已删除\n\n发送\"0\"返回子菜单"
@@ -503,17 +505,17 @@ class AccountingService:
     def _handle_switch_table(self, content: str) -> Dict[str, Any]:
         """处理切换表/目录"""
         if content.strip() == "0":
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
         new_table = content.strip()
         if new_table:
             self.manager.table_name = new_table
-            session = session_manager.get_session(self.user_id)
+            session = session_manager.get_session(self.bot_id, self.user_id)
             session.table_name = new_table
             session.update_activity()
             
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return {
                 "type": "success",
                 "message": f"✓ 已切换到表/目录: {new_table}\n\n发送\"0\"返回子菜单"
@@ -545,7 +547,7 @@ class AccountingService:
                 message += f"  {table_name}: {count} 条记录{marker}\n"
             
             message += "\n发送\"0\"返回子菜单"
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return {
                 "type": "success",
                 "message": message
@@ -570,7 +572,7 @@ class AccountingService:
 
 请输入数字选择（0-4）"""
         
-        session_manager.get_session(self.user_id).context["summarize_mode"] = "menu"
+        session_manager.get_session(self.bot_id, self.user_id).context["summarize_mode"] = "menu"
         return {
             "type": "sub_menu",
             "message": menu_text
@@ -578,12 +580,12 @@ class AccountingService:
     
     def _handle_summarize(self, content: str) -> Dict[str, Any]:
         """处理查询并总结"""
-        session = session_manager.get_session(self.user_id)
+        session = session_manager.get_session(self.bot_id, self.user_id)
         summarize_mode = session.context.get("summarize_mode", "menu")
         
         if content.strip() == "0":
             if summarize_mode == "menu":
-                session_manager.set_sub_menu(self.user_id, "main")
+                session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
                 return self.show_sub_menu()
             else:
                 session.context["summarize_mode"] = "menu"
@@ -637,7 +639,7 @@ class AccountingService:
             message += f"【总结分析结果】\n\n{summary_text}\n\n"
             message += f"发送\"0\"返回子菜单"
             
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return {
                 "type": "success",
                 "message": message
@@ -694,7 +696,7 @@ class AccountingService:
                 message += f"  {category}: {stats['count']} 条, ¥{stats['amount']:.2f} ({percentage:.1f}%)\n"
             
             message += "\n发送\"0\"返回子菜单"
-            session_manager.set_sub_menu(self.user_id, "main")
+            session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return {
                 "type": "success",
                 "message": message

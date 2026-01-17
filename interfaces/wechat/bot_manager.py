@@ -36,7 +36,9 @@ class BotManager:
         self._initialized = True
         self._bots: Dict[str, Dict] = {}
         self._crypts: Dict[str, WeChatMessageCrypt] = {}
-        self._lock = threading.Lock()
+        # 注意：get_crypt() 内部会调用 get_bot_config()，两者都会尝试获取同一把锁；
+        # 使用不可重入的 Lock 会导致死锁（表现为“只收到第一条消息，后续都收不到/不回复”）。
+        self._lock = threading.RLock()
         
         # 加载配置
         self._load_config()

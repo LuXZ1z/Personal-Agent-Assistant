@@ -56,22 +56,28 @@ class MessageDeduplicator:
         self._cleanup_expired()
         
         # 生成消息唯一标识
-        # 使用 msg_id 或 (user_id + content) 作为标识
+        # 优先使用 msg_id，如果没有则使用 (user_id + timestamp + content_hash) 作为标识
+        # 注意：如果没有msg_id，只使用content_hash可能导致不同消息被误判为重复
         if msg_id:
             message_key = f"{user_id}:{msg_id}"
         else:
-            # 如果没有msg_id，使用内容hash
+            # 如果没有msg_id，使用时间戳+内容hash，避免不同消息被误判为重复
             import hashlib
+            import time
             content_hash = hashlib.md5(content.encode()).hexdigest()[:8]
-            message_key = f"{user_id}:{content_hash}"
+            # 添加时间戳（精确到秒），这样相同内容但不同时间的消息不会被误判
+            timestamp = int(time.time())
+            message_key = f"{user_id}:{timestamp}:{content_hash}"
+            logger.debug(f"消息无msg_id，使用时间戳+内容hash: user_id={user_id}, timestamp={timestamp}, content_hash={content_hash}")
         
         with self._lock:
             if message_key in self._processed_messages:
-                logger.warning(f"检测到重复消息: user_id={user_id}, msg_id={msg_id}")
+                logger.warning(f"检测到重复消息: user_id={user_id}, msg_id={msg_id}, message_key={message_key}")
                 return True
             
             # 记录已处理的消息
             self._processed_messages.add(message_key)
+            logger.debug(f"记录新消息: user_id={user_id}, msg_id={msg_id}, message_key={message_key}, total_messages={len(self._processed_messages)}")
             return False
     
     def _cleanup_expired(self):
