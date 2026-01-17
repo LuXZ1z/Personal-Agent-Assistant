@@ -6,10 +6,11 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
+from typing import Optional
 from core.database import get_database_manager
 from shared.models import StructuredRecord
 from shared.utils import setup_logger
-from shared.menu_config import get_all_businesses, generate_menu_text, BUSINESS_CONFIG
+from shared.menu_config import get_all_businesses, generate_menu_text, get_business_by_id_filtered, BUSINESS_CONFIG
 from interfaces.cli.service_adapter import ServiceAdapter
 import importlib
 
@@ -19,13 +20,40 @@ logger = setup_logger(__name__)
 class CLIMain:
     """CLI主系统页面"""
     
-    def __init__(self):
-        """初始化CLI"""
-        self.user_id = "local_test_user"
+    def __init__(self, bot_id: Optional[str] = None):
+        """
+        初始化CLI
+        
+        Args:
+            bot_id: 机器人ID（可选），如果指定则只显示该机器人的功能
+        """
+        self.bot_id = bot_id or "default"
+        self.user_id = f"local_test_user_{self.bot_id}"
+        
+        # 加载机器人配置（如果指定了bot_id）
+        self.allowed_features = None
+        self.bot_name = "默认（全功能）"
+        
+        if bot_id:
+            try:
+                from interfaces.wechat.bot_manager import bot_manager
+                bot_config = bot_manager.get_bot_config(bot_id)
+                self.allowed_features = bot_config.get('features')
+                self.bot_name = bot_config.get('name', bot_id)
+                print(f"\n🤖 当前测试机器人: {self.bot_name}")
+                print(f"📋 可用功能: {', '.join(self.allowed_features)}")
+            except ValueError as e:
+                print(f"\n❌ 错误: {e}")
+                print(f"💡 可用的机器人ID请查看 config/bots.yaml")
+                raise
     
     def show_menu(self):
-        """显示主菜单（使用统一配置）"""
-        menu_text = generate_menu_text(user_id=self.user_id, include_status=True)
+        """显示主菜单（使用动态过滤）"""
+        menu_text = generate_menu_text(
+            user_id=self.user_id, 
+            include_status=True,
+            allowed_features=self.allowed_features
+        )
         print(menu_text)
     
     def show_status(self):
@@ -101,7 +129,18 @@ class CLIMain:
         while True:
             try:
                 self.show_menu()
+                
+                # 获取过滤后的业务列表
                 businesses = get_all_businesses()
+                if self.allowed_features:
+                    businesses = [
+                        b for b in businesses 
+                        if b['business_type'] in self.allowed_features
+                    ]
+                    # 重新编号
+                    for idx, business in enumerate(businesses, start=1):
+                        business['id'] = str(idx)
+                
                 max_choice = len(businesses) + 1  # +1 for status option
                 choice = input(f"\n请选择 (0-{max_choice}): ").strip()
                 
@@ -116,12 +155,15 @@ class CLIMain:
                     self.show_status()
                 
                 else:
-                    # 动态查找业务
-                    business_info = None
-                    for business in businesses:
-                        if business["id"] == choice:
-                            business_info = business
-                            break
+                    # 动态查找业务（支持过滤后的编号）
+                    if self.allowed_features:
+                        business_info = get_business_by_id_filtered(choice, self.allowed_features)
+                    else:
+                        business_info = None
+                        for business in businesses:
+                            if business["id"] == choice:
+                                business_info = business
+                                break
                     
                     if business_info:
                         self.enter_business(
@@ -145,9 +187,22 @@ class CLIMain:
 
 
 def main():
-    """主函数"""
-    cli = CLIMain()
-    cli.run()
+    """主函数，支持命令行参数"""
+    import argparse
+    parser = argparse.ArgumentParser(description='本地业务测试')
+    parser.add_argument('--bot', type=str, help='指定机器人ID (如: test, prod, hr)')
+    args = parser.parse_args()
+    
+    try:
+        cli = CLIMain(bot_id=args.bot)
+        cli.run()
+    except ValueError:
+        # 已经在 CLIMain.__init__ 中打印了错误信息
+        return
+    except Exception as e:
+        print(f"\n❌ 启动失败: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 if __name__ == "__main__":

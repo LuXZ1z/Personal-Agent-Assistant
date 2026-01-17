@@ -15,13 +15,15 @@ logger = setup_logger(__name__)
 class SessionState:
     """会话状态"""
     
-    def __init__(self, user_id: str):
+    def __init__(self, bot_id: str, user_id: str):
         """
         初始化会话状态
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
         """
+        self.bot_id = bot_id
         self.user_id = user_id
         self.business_type: str = "menu"  # menu/accounting/essay/employee/tarot
         self.sub_menu: Optional[str] = None  # 子菜单状态：None/main/add/query/update/delete/switch/list/analyze
@@ -42,6 +44,7 @@ class SessionState:
     def to_dict(self) -> Dict[str, Any]:
         """转换为字典"""
         return {
+            "bot_id": self.bot_id,
             "user_id": self.user_id,
             "business_type": self.business_type,
             "table_name": self.table_name,
@@ -78,73 +81,80 @@ class SessionManager:
         
         logger.info("会话管理器初始化成功")
     
-    def get_session(self, user_id: str) -> SessionState:
+    def get_session(self, bot_id: str, user_id: str) -> SessionState:
         """
         获取用户会话状态（如果不存在则创建）
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
             
         Returns:
             会话状态对象
         """
-        if not user_id:
-            raise ValueError("user_id 不能为空")
+        if not bot_id or not user_id:
+            raise ValueError("bot_id 和 user_id 不能为空")
+        
+        # 使用复合键
+        session_key = f"{bot_id}:{user_id}"
         
         # 定期清理过期会话
         self._cleanup_expired_sessions()
         
         with self._lock:
-            if user_id in self._sessions:
-                session = self._sessions[user_id]
+            if session_key in self._sessions:
+                session = self._sessions[session_key]
                 # 检查是否过期
                 if session.is_expired():
-                    logger.debug(f"用户 {user_id} 会话已过期，创建新会话")
-                    session = SessionState(user_id)
-                    self._sessions[user_id] = session
+                    logger.debug(f"机器人 {bot_id} 用户 {user_id} 会话已过期，创建新会话")
+                    session = SessionState(bot_id, user_id)
+                    self._sessions[session_key] = session
                 else:
                     session.update_activity()
                 return session
             else:
                 # 创建新会话
-                session = SessionState(user_id)
-                self._sessions[user_id] = session
-                logger.debug(f"为用户 {user_id} 创建新会话")
+                session = SessionState(bot_id, user_id)
+                self._sessions[session_key] = session
+                logger.debug(f"为机器人 {bot_id} 用户 {user_id} 创建新会话")
                 return session
     
-    def update_business_type(self, user_id: str, business_type: str, table_name: Optional[str] = None):
+    def update_business_type(self, bot_id: str, user_id: str, business_type: str, table_name: Optional[str] = None):
         """
         更新用户的业务类型
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
             business_type: 业务类型（menu/accounting/essay/employee/tarot）
             table_name: 表/目录名（可选）
         """
-        session = self.get_session(user_id)
+        session = self.get_session(bot_id, user_id)
         session.business_type = business_type
         if table_name:
             session.table_name = table_name
         session.update_activity()
-        logger.debug(f"用户 {user_id} 切换到业务: {business_type}, 表: {table_name}")
+        logger.debug(f"机器人 {bot_id} 用户 {user_id} 切换到业务: {business_type}, 表: {table_name}")
     
-    def update_context(self, user_id: str, context: Dict[str, Any]):
+    def update_context(self, bot_id: str, user_id: str, context: Dict[str, Any]):
         """
         更新用户会话上下文
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
             context: 上下文字典
         """
-        session = self.get_session(user_id)
+        session = self.get_session(bot_id, user_id)
         session.context.update(context)
         session.update_activity()
     
-    def get_context(self, user_id: str, key: str, default: Any = None) -> Any:
+    def get_context(self, bot_id: str, user_id: str, key: str, default: Any = None) -> Any:
         """
         获取会话上下文中的值
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
             key: 上下文键
             default: 默认值
@@ -152,48 +162,52 @@ class SessionManager:
         Returns:
             上下文值
         """
-        session = self.get_session(user_id)
+        session = self.get_session(bot_id, user_id)
         return session.context.get(key, default)
     
-    def clear_session(self, user_id: str):
+    def clear_session(self, bot_id: str, user_id: str):
         """
         清除用户会话
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
         """
+        session_key = f"{bot_id}:{user_id}"
         with self._lock:
-            if user_id in self._sessions:
-                del self._sessions[user_id]
-                logger.debug(f"已清除用户 {user_id} 的会话")
+            if session_key in self._sessions:
+                del self._sessions[session_key]
+                logger.debug(f"已清除机器人 {bot_id} 用户 {user_id} 的会话")
     
-    def reset_to_menu(self, user_id: str):
+    def reset_to_menu(self, bot_id: str, user_id: str):
         """
         重置用户会话到菜单状态
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
         """
-        session = self.get_session(user_id)
+        session = self.get_session(bot_id, user_id)
         session.business_type = "menu"
         session.sub_menu = None
         session.table_name = None
         session.context.clear()
         session.update_activity()
-        logger.debug(f"用户 {user_id} 已重置到菜单状态")
+        logger.debug(f"机器人 {bot_id} 用户 {user_id} 已重置到菜单状态")
     
-    def set_sub_menu(self, user_id: str, sub_menu: str):
+    def set_sub_menu(self, bot_id: str, user_id: str, sub_menu: str):
         """
         设置子菜单状态
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
             sub_menu: 子菜单状态（main/add/query/update/delete/switch/list/analyze）
         """
-        session = self.get_session(user_id)
+        session = self.get_session(bot_id, user_id)
         session.sub_menu = sub_menu
         session.update_activity()
-        logger.debug(f"用户 {user_id} 设置子菜单: {sub_menu}")
+        logger.debug(f"机器人 {bot_id} 用户 {user_id} 设置子菜单: {sub_menu}")
     
     def _cleanup_expired_sessions(self):
         """清理过期的会话"""

@@ -23,6 +23,7 @@ from interfaces.wechat.message_router import message_router
 from interfaces.wechat.session_manager import session_manager
 from interfaces.wechat.message_deduplicator import message_deduplicator
 from interfaces.wechat.task_manager import task_manager
+from interfaces.wechat.bot_manager import bot_manager
 from shared.utils import setup_logger
 
 logger = setup_logger(__name__)
@@ -30,74 +31,89 @@ logger = setup_logger(__name__)
 # 创建FastAPI应用
 app = FastAPI(title="Personal Assistant WeChat Agent", version="1.0.0")
 
-# 初始化微信加解密器
-wxcpt = WeChatMessageCrypt(
-    token=settings.wechat_token,
-    encoding_aes_key=settings.wechat_encoding_aes_key,
-    receive_id=settings.wechat_corp_id  # 使用企业微信CorpID
-)
-
 # 初始化队列客户端
 queue_client = QueueClient()
 
 # 初始化响应管理器
 response_manager = ResponseManager()
 
-# Access Token 缓存
-access_token_cache = {
-    'token': None,
-    'expires_at': 0
-}
-
-# 企业微信配置
-CORP_ID = settings.wechat_corp_id
-CORP_SECRET = settings.wechat_corp_secret
-AGENT_ID = settings.wechat_agent_id
+# Access Token 缓存（按机器人ID缓存）
+access_token_cache: dict = {}
 
 
-def get_access_token() -> Optional[str]:
-    """获取企业微信 access_token（带缓存）"""
+def get_access_token(bot_id: str) -> Optional[str]:
+    """
+    获取企业微信 access_token（带缓存）
+    
+    Args:
+        bot_id: 机器人ID
+        
+    Returns:
+        access_token 或 None
+    """
     current_time = datetime.now().timestamp()
     
-    # 如果 token 还没过期，直接返回
-    if access_token_cache['token'] and current_time < access_token_cache['expires_at']:
-        return access_token_cache['token']
+    # 获取机器人配置
+    try:
+        bot_config = bot_manager.get_bot_config(bot_id)
+        corp_id = bot_config['wechat_corp_id']
+        corp_secret = bot_config['wechat_corp_secret']
+    except ValueError as e:
+        logger.error(f"获取机器人配置失败: {e}")
+        return None
+    
+    # 如果该机器人的 token 还没过期，直接返回
+    if bot_id in access_token_cache:
+        cache = access_token_cache[bot_id]
+        if cache.get('token') and current_time < cache.get('expires_at', 0):
+            return cache['token']
     
     # 请求新的 access_token
     try:
-        url = f'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={CORP_ID}&corpsecret={CORP_SECRET}'
+        url = f'https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid={corp_id}&corpsecret={corp_secret}'
         response = requests.get(url, timeout=10)
         response.raise_for_status()
         
         result = response.json()
         if 'access_token' in result:
-            access_token_cache['token'] = result['access_token']
-            # 提前 5 分钟过期，避免边界问题
-            access_token_cache['expires_at'] = current_time + result.get('expires_in', 7200) - 300
-            logger.info(f"✓ 获取 access_token 成功")
-            return access_token_cache['token']
+            # 缓存 token
+            access_token_cache[bot_id] = {
+                'token': result['access_token'],
+                'expires_at': current_time + result.get('expires_in', 7200) - 300  # 提前 5 分钟过期
+            }
+            logger.info(f"✓ 获取机器人 {bot_id} access_token 成功")
+            return access_token_cache[bot_id]['token']
         else:
-            logger.error(f"✗ 获取 access_token 失败: {result.get('errmsg')}")
+            logger.error(f"✗ 获取机器人 {bot_id} access_token 失败: {result.get('errmsg')}")
             return None
     except Exception as e:
-        logger.error(f"✗ 请求 access_token 异常: {e}")
+        logger.error(f"✗ 请求机器人 {bot_id} access_token 异常: {e}")
         return None
 
 
-def send_text_message(user_id: str, content: str) -> bool:
+def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
     """
     主动发送文本消息到企业微信
     
     Args:
+        bot_id: 机器人ID
         user_id: 用户 ID
         content: 消息内容
         
     Returns:
         是否发送成功
     """
-    access_token = get_access_token()
+    access_token = get_access_token(bot_id)
     if not access_token:
-        logger.error("✗ 无法获取 access_token，消息发送失败")
+        logger.error(f"✗ 无法获取机器人 {bot_id} access_token，消息发送失败")
+        return False
+    
+    # 获取机器人配置
+    try:
+        bot_config = bot_manager.get_bot_config(bot_id)
+        agent_id = bot_config['wechat_agent_id']
+    except ValueError as e:
+        logger.error(f"获取机器人配置失败: {e}")
         return False
     
     try:
@@ -105,7 +121,7 @@ def send_text_message(user_id: str, content: str) -> bool:
         data = {
             "touser": user_id,
             "msgtype": "text",
-            "agentid": AGENT_ID,
+            "agentid": agent_id,
             "text": {
                 "content": content
             },
@@ -119,7 +135,7 @@ def send_text_message(user_id: str, content: str) -> bool:
         
         result = response.json()
         if result.get('errcode') == 0:
-            logger.info(f"✓ 消息发送成功: user_id={user_id}, content_length={len(content)}")
+            logger.info(f"✓ 消息发送成功: bot_id={bot_id}, user_id={user_id}, content_length={len(content)}")
             return True
         else:
             logger.error(f"✗ 消息发送失败: {result.get('errmsg')}, errcode={result.get('errcode')}")
@@ -141,6 +157,13 @@ async def verify_url(
     """微信URL验证接口（GET请求）"""
     try:
         logger.info(f"收到URL验证请求: botid={botid}")
+        
+        # 获取机器人的加解密器
+        try:
+            wxcpt = bot_manager.get_crypt(botid)
+        except ValueError as e:
+            logger.error(f"无效的botid: {botid}, {e}")
+            return PlainTextResponse(content="invalid bot", status_code=404)
         
         # 验证URL
         decrypted_echostr = wxcpt.verify_url(
@@ -171,6 +194,13 @@ async def handle_message(
     """处理微信消息（POST请求）"""
     try:
         logger.info(f"收到消息: botid={botid}, timestamp={timestamp}")
+        
+        # 获取机器人的加解密器
+        try:
+            wxcpt = bot_manager.get_crypt(botid)
+        except ValueError as e:
+            logger.error(f"无效的botid: {botid}, {e}")
+            return PlainTextResponse(content="invalid bot", status_code=404)
         
         # 读取POST数据
         post_data = await request.body()
@@ -251,10 +281,10 @@ async def handle_message(
                 return PlainTextResponse(content="success", status_code=200)
             
             try:
-                logger.info(f"处理消息: user_id={user_id}, content={content[:50]}")
+                logger.info(f"处理消息: botid={botid}, user_id={user_id}, content={content[:50]}")
                 
                 # 检查是否需要调用LLM（通过检查业务类型和内容）
-                session = session_manager.get_session(user_id)
+                session = session_manager.get_session(botid, user_id)
                 needs_llm = False
                 task_type = None
                 
@@ -269,11 +299,11 @@ async def handle_message(
                 # 如果需要调用LLM，先发送"正在处理"消息
                 if needs_llm:
                     processing_message = f"⏳ 正在调用大模型处理中...\n\n任务类型: {task_type}\n内容: {content[:50]}\n\n请稍候，处理完成后会立即返回结果"
-                    send_text_message(user_id, processing_message)
-                    logger.info(f"已发送正在处理消息: user_id={user_id}")
+                    send_text_message(botid, user_id, processing_message)
+                    logger.info(f"已发送正在处理消息: botid={botid}, user_id={user_id}")
                 
                 # 使用消息路由器处理消息（会检查任务状态）
-                result = message_router.route_message(user_id, content)
+                result = message_router.route_message(botid, user_id, content)
                 
                 # 获取响应消息
                 if result.get("type") == "error":
@@ -291,15 +321,15 @@ async def handle_message(
                 # 如果返回的是processing类型，说明任务还在处理中，不发送（因为之前已经发送了）
                 if needs_llm and result.get("type") == "processing":
                     # 任务正在处理中，不发送重复消息
-                    logger.info(f"任务正在处理中，跳过发送: user_id={user_id}")
+                    logger.info(f"任务正在处理中，跳过发送: botid={botid}, user_id={user_id}")
                 else:
                     # 使用主动发送 API 发送消息（企业微信推荐方式）
-                    success = send_text_message(user_id, response_message)
+                    success = send_text_message(botid, user_id, response_message)
                     
                     if success:
-                        logger.info(f"✓ 消息发送成功: user_id={user_id}, response_length={len(response_message)}")
+                        logger.info(f"✓ 消息发送成功: botid={botid}, user_id={user_id}, response_length={len(response_message)}")
                     else:
-                        logger.error(f"✗ 消息发送失败: user_id={user_id}")
+                        logger.error(f"✗ 消息发送失败: botid={botid}, user_id={user_id}")
                 
                 # 返回 success 告诉企业微信我们已经处理了
                 return PlainTextResponse(content="success", status_code=200)

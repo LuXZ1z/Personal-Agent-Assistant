@@ -2,11 +2,12 @@
 消息路由器
 根据用户消息和会话状态，路由到对应的业务处理器
 """
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from shared.utils import setup_logger
 from interfaces.wechat.session_manager import session_manager
 from interfaces.wechat.task_manager import task_manager
 from interfaces.wechat.menu_handler import MenuHandler
+from interfaces.wechat.bot_manager import bot_manager
 # 动态导入业务服务，使用统一配置
 from shared.menu_config import BUSINESS_CONFIG
 import importlib
@@ -21,29 +22,37 @@ class MessageRouter:
         """初始化路由器"""
         self.menu_handler = MenuHandler()
     
-    def route_message(self, user_id: str, content: str) -> Dict[str, Any]:
+    def route_message(self, bot_id: str, user_id: str, content: str) -> Dict[str, Any]:
         """
         路由消息到对应的业务处理器
         
         Args:
+            bot_id: 机器人ID
             user_id: 用户ID
             content: 消息内容
             
         Returns:
             处理结果字典
         """
-        if not user_id or not content:
+        if not bot_id or not user_id or not content:
             return {
                 "type": "error",
-                "message": "用户ID或消息内容不能为空"
+                "message": "机器人ID、用户ID或消息内容不能为空"
             }
         
+        # 获取机器人的功能列表
+        try:
+            allowed_features = bot_manager.get_features(bot_id)
+        except ValueError as e:
+            logger.error(f"获取机器人功能失败: {e}")
+            allowed_features = None  # 默认全功能
+        
         # 检查是否有正在处理的任务
-        task = task_manager.get_task(user_id)
+        task = task_manager.get_task(bot_id, user_id)
         if task and task.status == "processing":
             # 检查是否为取消命令
             if content.strip() in ["取消", "cancel", "停止", "stop"]:
-                cancelled = task_manager.cancel_task(user_id)
+                cancelled = task_manager.cancel_task(bot_id, user_id)
                 if cancelled:
                     return {
                         "type": "info",
@@ -63,18 +72,18 @@ class MessageRouter:
                 }
         
         # 获取会话状态
-        session = session_manager.get_session(user_id)
+        session = session_manager.get_session(bot_id, user_id)
         business_type = session.business_type
         
-        logger.debug(f"路由消息: user_id={user_id}, business_type={business_type}, content={content[:50]}")
+        logger.debug(f"路由消息: bot_id={bot_id}, user_id={user_id}, business_type={business_type}, content={content[:50]}")
         
         # 1. 检查是否为菜单命令（优先级最高）
         if self.menu_handler.is_menu_command(content):
             # 如果用户有正在处理的任务，先取消
             if task and task.status == "processing":
-                task_manager.cancel_task(user_id)
-            session_manager.reset_to_menu(user_id)
-            return self.menu_handler.show_menu(user_id)
+                task_manager.cancel_task(bot_id, user_id)
+            session_manager.reset_to_menu(bot_id, user_id)
+            return self.menu_handler.show_menu(user_id, allowed_features=allowed_features)
         
         # 2. 如果在菜单状态，检查是否为业务选择
         if business_type == "menu":
@@ -83,14 +92,15 @@ class MessageRouter:
                     "type": "info",
                     "message": "退出系统\n\n感谢使用！"
                 }
-            elif self.menu_handler.is_business_choice(content):
-                result = self.menu_handler.select_business(content)
+            elif self.menu_handler.is_business_choice(content, allowed_features=allowed_features):
+                result = self.menu_handler.select_business(content, allowed_features=allowed_features)
                 if result["type"] == "show_status":
                     # 查看系统状态
-                    return self._show_system_status(user_id)
+                    return self._show_system_status(bot_id, user_id)
                 elif result["type"] == "business_selected":
                     # 更新会话状态
                     session_manager.update_business_type(
+                        bot_id,
                         user_id,
                         result["business_type"]
                     )
@@ -115,7 +125,7 @@ class MessageRouter:
             else:
                 # 在菜单状态但输入不是数字，显示菜单
                 logger.info(f"用户在菜单状态但输入了非数字内容，显示菜单")
-                return self.menu_handler.show_menu()
+                return self.menu_handler.show_menu(user_id, allowed_features=allowed_features)
         
         # 3. 路由到对应的业务服务
         try:
@@ -198,7 +208,7 @@ class MessageRouter:
             logger.error(f"加载业务Manager失败: business_type={business_type}, error={e}", exc_info=True)
             return None
     
-    def _show_system_status(self, user_id: str) -> Dict[str, Any]:
+    def _show_system_status(self, bot_id: str, user_id: str) -> Dict[str, Any]:
         """显示系统状态"""
         from core.database import get_database_manager
         

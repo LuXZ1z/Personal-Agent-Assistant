@@ -43,6 +43,9 @@ class Settings(BaseSettings):
     database_path: str = "./data/assistant.db"
     user_database_dir: str = "./data/users"  # 用户数据库目录
     
+    # 机器人配置
+    bot_config_path: str = "./config/bots.yaml"  # 机器人配置文件路径
+    
     # 日志配置
     log_level: str = "INFO"
     log_file: Optional[str] = None
