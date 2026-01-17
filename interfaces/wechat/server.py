@@ -93,7 +93,7 @@ def get_access_token(bot_id: str) -> Optional[str]:
 
 def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
     """
-    主动发送文本消息到企业微信
+    主动发送文本消息到企业微信（支持分批次发送）
     
     Args:
         bot_id: 机器人ID
@@ -101,73 +101,84 @@ def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
         content: 消息内容
         
     Returns:
-        是否发送成功
+        是否所有消息都发送成功
     """
-    # 美化和截断消息
+    # 美化和分割消息
     from shared.message_utils import format_message
-    content = format_message(content, max_bytes=4096)
+    messages = format_message(content, max_chars=750)
     
-    send_start_time = time.time()
-    logger.info(f"[发送消息] 开始发送: bot_id={bot_id}, user_id={user_id}, content_length={len(content)}")
+    if not messages:
+        return True
     
-    logger.info(f"[发送消息] 步骤1: 获取 access_token...")
+    logger.info(f"[发送消息] 开始发送: bot_id={bot_id}, user_id={user_id}, 总消息数={len(messages)}, 原始长度={len(content)}")
+    
+    # 获取 access_token 和 agent_id（所有消息共享）
     access_token = get_access_token(bot_id)
     if not access_token:
         logger.error(f"[发送消息] ✗ 无法获取机器人 {bot_id} access_token，消息发送失败")
         return False
-    logger.info(f"[发送消息] ✓ access_token 获取成功: {access_token[:20]}...")
     
-    # 获取机器人配置
     try:
-        logger.info(f"[发送消息] 步骤2: 获取机器人配置...")
         bot_config = bot_manager.get_bot_config(bot_id)
         agent_id = bot_config['wechat_agent_id']
-        logger.info(f"[发送消息] ✓ 机器人配置获取成功: agent_id={agent_id}")
     except ValueError as e:
         logger.error(f"[发送消息] ✗ 获取机器人配置失败: {e}")
         return False
     
-    try:
-        logger.info(f"[发送消息] 步骤3: 构造请求数据...")
-        url = f'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={access_token}'
-        data = {
-            "touser": user_id,
-            "msgtype": "text",
-            "agentid": agent_id,
-            "text": {
-                "content": content
-            },
-            "safe": 0,
-            "enable_id_trans": 0,
-            "enable_duplicate_check": 0,
-        }
-        logger.info(f"[发送消息] 请求URL: {url}")
-        logger.debug(f"[发送消息] 请求数据: {json.dumps(data, ensure_ascii=False)[:200]}...")
+    # 分批次发送
+    all_success = True
+    url = f'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={access_token}'
+    
+    for i, message_content in enumerate(messages, 1):
+        send_start_time = time.time()
+        logger.info(f"[发送消息] 发送第 {i}/{len(messages)} 条消息，长度={len(message_content)}")
         
-        logger.info(f"[发送消息] 步骤4: 发送HTTP请求...")
-        response = requests.post(url, json=data, timeout=10)
-        logger.info(f"[发送消息] HTTP响应状态码: {response.status_code}")
-        response.raise_for_status()
+        try:
+            data = {
+                "touser": user_id,
+                "msgtype": "text",
+                "agentid": agent_id,
+                "text": {
+                    "content": message_content
+                },
+                "safe": 0,
+                "enable_id_trans": 0,
+                "enable_duplicate_check": 0,
+            }
+            
+            response = requests.post(url, json=data, timeout=10)
+            response.raise_for_status()
+            
+            result = response.json()
+            
+            if result.get('errcode') == 0:
+                elapsed = time.time() - send_start_time
+                logger.info(f"[发送消息] ✓ 第 {i}/{len(messages)} 条消息发送成功，耗时={elapsed:.3f}秒")
+            else:
+                logger.error(f"[发送消息] ✗ 第 {i}/{len(messages)} 条消息发送失败: errmsg={result.get('errmsg')}, errcode={result.get('errcode')}")
+                all_success = False
+                
+        except requests.exceptions.Timeout as e:
+            logger.error(f"[发送消息] ✗ 第 {i}/{len(messages)} 条消息请求超时: {e}")
+            all_success = False
+        except requests.exceptions.RequestException as e:
+            logger.error(f"[发送消息] ✗ 第 {i}/{len(messages)} 条消息请求异常: {e}")
+            all_success = False
+        except Exception as e:
+            logger.error(f"[发送消息] ✗ 第 {i}/{len(messages)} 条消息发送异常: {e}", exc_info=True)
+            all_success = False
         
-        result = response.json()
-        logger.info(f"[发送消息] 响应结果: {json.dumps(result, ensure_ascii=False)}")
-        
-        if result.get('errcode') == 0:
-            elapsed = time.time() - send_start_time
-            logger.info(f"[发送消息] ✓ 消息发送成功: bot_id={bot_id}, user_id={user_id}, content_length={len(content)}, 耗时={elapsed:.3f}秒")
-            return True
-        else:
-            logger.error(f"[发送消息] ✗ 消息发送失败: errmsg={result.get('errmsg')}, errcode={result.get('errcode')}")
-            return False
-    except requests.exceptions.Timeout as e:
-        logger.error(f"[发送消息] ✗ 请求超时: {e}")
-        return False
-    except requests.exceptions.RequestException as e:
-        logger.error(f"[发送消息] ✗ 请求异常: {e}")
-        return False
-    except Exception as e:
-        logger.error(f"[发送消息] ✗ 发送消息异常: {e}", exc_info=True)
-        return False
+        # 在消息之间添加短暂延迟，避免发送过快
+        if i < len(messages):
+            import time as time_module
+            time_module.sleep(0.5)  # 延迟0.5秒
+    
+    if all_success:
+        logger.info(f"[发送消息] ✓ 所有 {len(messages)} 条消息发送成功")
+    else:
+        logger.warning(f"[发送消息] ⚠ 部分消息发送失败，共 {len(messages)} 条")
+    
+    return all_success
 
 
 @app.get("/ai-bot/callback/{botid}")

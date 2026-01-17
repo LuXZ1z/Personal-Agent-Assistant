@@ -1,9 +1,9 @@
 """
 消息处理工具函数
-用于美化和截断微信消息
+用于美化和分批次发送微信消息
 """
 import re
-from typing import Optional
+from typing import List, Optional
 
 
 def beautify_message(text: str) -> str:
@@ -44,71 +44,110 @@ def beautify_message(text: str) -> str:
     return text
 
 
-def truncate_message(text: str, max_bytes: int = 4096, encoding: str = 'utf-8') -> str:
+def split_message(text: str, max_chars: int = 750) -> List[str]:
     """
-    截断消息到指定字节数
+    将消息分割成多个不超过指定字符数的消息块
     
     Args:
         text: 原始消息文本
-        max_bytes: 最大字节数（默认4096，微信限制）
-        encoding: 编码方式（默认utf-8）
+        max_chars: 每个消息块的最大字符数（默认750，微信限制，包括空行和emoji）
         
     Returns:
-        截断后的消息文本，如果超出限制会添加提示
+        消息块列表，每个消息块不超过max_chars字符
     """
     if not text:
-        return text
+        return [text]
     
-    # 计算当前字节数
-    current_bytes = len(text.encode(encoding))
+    # 计算当前字符数
+    current_chars = len(text)
     
-    if current_bytes <= max_bytes:
-        return text
+    if current_chars <= max_chars:
+        return [text]
     
-    # 需要截断
-    truncated = text
-    truncated_bytes = current_bytes
+    # 需要分割
+    messages = []
+    remaining_text = text
     
-    # 逐步截断，直到符合要求
-    # 预留一些空间用于添加提示信息
-    max_content_bytes = max_bytes - 50  # 预留50字节用于提示
+    # 预留空间用于添加序号（格式：[1/3] 最多占用约10字符）
+    max_content_chars = max_chars - 15
     
-    while truncated_bytes > max_content_bytes:
-        # 按字符截断（而不是按字节），避免截断多字节字符
-        ratio = max_content_bytes / truncated_bytes
-        new_length = int(len(truncated) * ratio)
-        truncated = truncated[:new_length]
-        truncated_bytes = len(truncated.encode(encoding))
+    # 先计算总部分数
+    total_chars = len(text)
+    total_parts = (total_chars + max_content_chars - 1) // max_content_chars
     
-    # 确保不会截断在中间字符
-    while len(truncated.encode(encoding)) > max_content_bytes:
-        truncated = truncated[:-1]
+    part_num = 0
     
-    # 添加截断提示
-    truncated += f"\n\n...（消息过长，已截断，原始长度: {len(text)} 字符）"
+    while remaining_text:
+        part_num += 1
+        remaining_chars = len(remaining_text)
+        
+        if remaining_chars <= max_content_chars:
+            # 最后一部分
+            if total_parts > 1:
+                messages.append(f"{remaining_text}\n\n[{part_num}/{total_parts}]")
+            else:
+                messages.append(remaining_text)
+            break
+        
+        # 需要分割，尝试在换行处分割
+        chunk = ""
+        pos = 0
+        
+        # 按字符遍历，尽量在换行处断开
+        last_newline_pos = -1
+        while pos < len(remaining_text):
+            char = remaining_text[pos]
+            test_chunk = chunk + char
+            test_chars = len(test_chunk)
+            
+            if test_chars > max_content_chars:
+                # 超出限制，使用上次换行位置
+                if last_newline_pos >= 0:
+                    # 在换行处断开
+                    chunk = remaining_text[:last_newline_pos + 1]
+                    remaining_text = remaining_text[last_newline_pos + 1:]
+                else:
+                    # 没有换行，强制在当前字符前断开
+                    chunk = remaining_text[:pos]
+                    remaining_text = remaining_text[pos:]
+                break
+            
+            chunk = test_chunk
+            if char == '\n':
+                last_newline_pos = pos
+            
+            pos += 1
+        
+        # 如果遍历完还没找到分割点，说明剩余部分都在限制内
+        if pos >= len(remaining_text):
+            chunk = remaining_text
+            remaining_text = ""
+        
+        # 添加序号
+        messages.append(f"{chunk.rstrip()}\n\n[{part_num}/{total_parts}]")
     
-    return truncated
+    return messages
 
 
-def format_message(text: str, max_bytes: int = 4096) -> str:
+def format_message(text: str, max_chars: int = 750) -> List[str]:
     """
-    格式化消息：美化并截断
+    格式化消息：美化并分割成多个消息块
     
     Args:
         text: 原始消息文本
-        max_bytes: 最大字节数（默认4096，微信限制）
+        max_chars: 每个消息块的最大字符数（默认750，微信限制，包括空行和emoji）
         
     Returns:
-        格式化后的消息文本
+        格式化后的消息列表，每个消息不超过max_chars字符
     """
     if not text:
-        return text
+        return [text]
     
     # 先美化
     beautified = beautify_message(text)
     
-    # 再截断
-    formatted = truncate_message(beautified, max_bytes=max_bytes)
+    # 再分割
+    messages = split_message(beautified, max_chars=max_chars)
     
-    return formatted
+    return messages
 
