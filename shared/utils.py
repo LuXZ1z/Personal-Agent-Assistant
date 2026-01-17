@@ -6,6 +6,7 @@ import logging
 import sys
 from pathlib import Path
 from typing import Optional
+from datetime import datetime
 import colorlog
 
 from shared.config import settings
@@ -17,7 +18,7 @@ def setup_logger(name: str, log_file: Optional[str] = None) -> logging.Logger:
     
     Args:
         name: 日志记录器名称
-        log_file: 日志文件路径（可选）
+        log_file: 日志文件路径（可选），如果包含 {timestamp} 会被替换为时间戳
         
     Returns:
         配置好的日志记录器
@@ -25,6 +26,20 @@ def setup_logger(name: str, log_file: Optional[str] = None) -> logging.Logger:
     # 默认写入 settings.log_file，避免只在screen里看到日志导致排查困难
     if log_file is None:
         log_file = settings.log_file or None
+    
+    # 如果日志文件路径包含 {timestamp}，替换为时间戳（格式：YYYYMMDD_HHMMSS）
+    if log_file and "{timestamp}" in log_file:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        log_file = log_file.replace("{timestamp}", timestamp)
+    elif log_file:
+        # 如果日志文件路径不包含时间戳，自动添加（避免覆盖）
+        log_path = Path(log_file)
+        if log_path.exists():
+            # 文件已存在，添加时间戳
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            stem = log_path.stem
+            suffix = log_path.suffix
+            log_file = str(log_path.parent / f"{stem}_{timestamp}{suffix}")
 
     logger = logging.getLogger(name)
     logger.setLevel(getattr(logging, settings.log_level.upper(), logging.INFO))

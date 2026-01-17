@@ -28,22 +28,21 @@ class EssayService:
         session = session_manager.get_session(self.bot_id, self.user_id)
         table_name = session.table_name or self.manager.table_name
         
-        menu_text = f"""
-随笔管理系统
-当前表/目录: {table_name}
-========
-请选择操作：
-  1. 添加随笔记录
-  2. 查询随笔记录
-  3. 修改随笔记录
-  4. 删除随笔记录
-  5. 切换表/目录
-  6. 查看所有表/目录
-  7. AI分析随笔
-  0. 退出
-========
+        menu_text = f"""📝 随笔管理系统 📝
 
-请输入数字选择（0-7）"""
+📁 当前表/目录: {table_name}
+
+✨ 请选择操作：
+  1. ➕ 添加随笔记录
+  2. 🔍 查询随笔记录
+  3. ✏️ 修改随笔记录
+  4. 🗑️ 删除随笔记录
+  5. 🔄 切换表/目录
+  6. 📋 查看所有表/目录
+  7. 🤖 AI分析随笔
+  0. 🚪 退出
+
+💡 请输入数字选择（0-7）"""
         
         return {
             "type": "sub_menu",

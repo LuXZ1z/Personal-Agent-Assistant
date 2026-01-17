@@ -90,7 +90,7 @@ class MessageRouter:
             if content.strip() == "0":
                 return {
                     "type": "info",
-                    "message": "退出系统\n\n感谢使用！"
+                    "message": "🚪 退出系统\n\n🙏 感谢使用！"
                 }
             elif self.menu_handler.is_business_choice(content, allowed_features=allowed_features):
                 result = self.menu_handler.select_business(content, allowed_features=allowed_features)
@@ -106,11 +106,15 @@ class MessageRouter:
                     )
                     # 进入业务后，先显示进入提示，然后显示子菜单
                     business_name = result.get("business_name", "")
-                    enter_message = f"""============================================================
-进入{business_name}系统
-============================================================
-
-"""
+                    # 业务emoji映射
+                    business_emojis = {
+                        "记账管理": "💰",
+                        "随笔管理": "📝",
+                        "员工管理": "👥",
+                        "塔罗牌占卜": "🔮"
+                    }
+                    emoji = business_emojis.get(business_name, "📌")
+                    enter_message = f"{emoji} 已进入 {business_name}\n\n"
                     # 获取子菜单
                     service = self._get_business_service(bot_id, user_id, result["business_type"])
                     if service:
@@ -217,29 +221,32 @@ class MessageRouter:
             db = get_database_manager(user_id=user_id)
             stats = db.get_statistics(user_id=user_id)
             
-            message = "系统状态\n"
-            message += "-" * 60 + "\n\n"
-            message += "数据库连接: ✓ 正常\n\n"
-            message += "各业务记录统计:\n"
-            message += "-" * 60 + "\n"
+            message = "📊 系统状态\n\n"
+            message += "✅ 数据库连接: 正常\n\n"
+            message += "📈 各业务记录统计:\n"
             
             by_type = stats.get('by_type', {})
+            business_emojis = {
+                "记账": "💰",
+                "随笔": "📝",
+                "员工": "👥",
+                "塔罗牌": "🔮"
+            }
             business_types = ["记账", "随笔", "员工", "塔罗牌"]
             for business_type in business_types:
+                emoji = business_emojis.get(business_type, "📌")
                 count = by_type.get(business_type, 0)
-                message += f"  {business_type}: {count} 条记录\n"
+                message += f"  {emoji} {business_type}: {count} 条\n"
             
             # 统计总记录数
             total_count = stats.get('total_count', 0)
-            message += f"\n  总计: {total_count} 条记录\n"
+            message += f"\n  📦 总计: {total_count} 条记录\n"
             
             # 统计表/目录数量
             by_table = stats.get('by_table', {})
             table_count = len(by_table)
-            message += f"  表/目录数: {table_count} 个\n"
-            
-            message += "-" * 60 + "\n\n"
-            message += "发送\"菜单\"返回主菜单"
+            message += f"  📁 表/目录数: {table_count} 个\n\n"
+            message += "💡 发送\"菜单\"返回主菜单"
             
             return {
                 "type": "info",

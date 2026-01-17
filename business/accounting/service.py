@@ -37,23 +37,22 @@ class AccountingService:
         session = session_manager.get_session(self.bot_id, self.user_id)
         table_name = session.table_name or self.manager.table_name
         
-        menu_text = f"""
-记账管理系统
-当前表/目录: {table_name}
-========
-请选择操作：
-  1. 添加记账记录（输入自然语言）
-  2. 查询记账记录
-  3. 修改记账记录
-  4. 删除记账记录
-  5. 切换表/目录
-  6. 查看所有表/目录
-  7. 查询并总结
-  8. 统计分析
-  0. 退出
-========
+        menu_text = f"""💰 记账管理系统 💰
 
-请输入数字选择（0-8）"""
+📁 当前表/目录: {table_name}
+
+✨ 请选择操作：
+  1. ➕ 添加记账记录
+  2. 🔍 查询记账记录
+  3. ✏️ 修改记账记录
+  4. 🗑️ 删除记账记录
+  5. 🔄 切换表/目录
+  6. 📋 查看所有表/目录
+  7. 📊 查询并总结
+  8. 📈 统计分析
+  0. 🚪 退出
+
+💡 请输入数字选择（0-8）"""
         
         return {
             "type": "sub_menu",

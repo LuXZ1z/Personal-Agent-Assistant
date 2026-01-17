@@ -84,6 +84,7 @@ def generate_menu_text(
 ) -> str:
     """
     生成菜单文本，支持根据机器人功能过滤
+    美化版本：减少等号，多用emoji，适配手机显示（一行约13个汉字）
     
     Args:
         user_id: 用户ID（可选）
@@ -93,9 +94,17 @@ def generate_menu_text(
     Returns:
         菜单文本
     """
-    user_info = f"\n当前用户: {user_id}\n" if user_id else "\n"
+    # 业务emoji映射
+    business_emojis = {
+        "accounting": "💰",
+        "essay": "📝",
+        "employee": "👥",
+        "tarot": "🔮"
+    }
     
-    menu_lines = ["请选择业务："]
+    user_info = f"\n👤 用户: {user_id}\n" if user_id else "\n"
+    
+    menu_lines = ["✨ 请选择业务："]
     businesses = get_all_businesses()
     
     # 根据允许的功能过滤
@@ -110,22 +119,20 @@ def generate_menu_text(
         business['id'] = str(idx)
     
     for business in businesses:
-        menu_lines.append(f"  {business['id']}. {business['display_name']}")
+        emoji = business_emojis.get(business['business_type'], "📌")
+        menu_lines.append(f"  {business['id']}. {emoji} {business['display_name']}")
     
     status_num = len(businesses) + 1
     if include_status:
-        menu_lines.append(f"  {status_num}. 查看系统状态")
+        menu_lines.append(f"  {status_num}. 📊 查看系统状态")
     
-    menu_lines.append("  0. 退出")
+    menu_lines.append("  0. 🚪 退出")
     
     max_choice = len(businesses) + (1 if include_status else 0)
-    menu_text = f"""============================================================
-本地业务集成功能测试
-============================================================{user_info}
+    menu_text = f"""🎯 个人助手系统 🎯{user_info}
 {chr(10).join(menu_lines)}
-============================================================
 
-请输入数字选择（0-{max_choice}）"""
+💡 请输入数字选择（0-{max_choice}）"""
     
     return menu_text
 

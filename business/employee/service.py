@@ -28,23 +28,21 @@ class EmployeeService:
         session = session_manager.get_session(self.bot_id, self.user_id)
         table_name = session.table_name or self.manager.table_name
         
-        menu_text = f"""========
-员工工作情况管理系统
-========
-当前表/目录: {table_name}
+        menu_text = f"""👥 员工工作情况管理系统 👥
 
-请选择操作：
-  1. 添加员工工作记录（输入自然语言）
-  2. 查询员工记录
-  3. 修改员工记录
-  4. 删除员工记录
-  5. 切换表/目录
-  6. 查看所有表/目录
-  7. 统计分析
-  0. 退出
-========
+📁 当前表/目录: {table_name}
 
-请输入数字选择（0-7）"""
+✨ 请选择操作：
+  1. ➕ 添加员工工作记录
+  2. 🔍 查询员工记录
+  3. ✏️ 修改员工记录
+  4. 🗑️ 删除员工记录
+  5. 🔄 切换表/目录
+  6. 📋 查看所有表/目录
+  7. 📊 统计分析
+  0. 🚪 退出
+
+💡 请输入数字选择（0-7）"""
         
         return {
             "type": "sub_menu",
