@@ -103,6 +103,10 @@ def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
     Returns:
         是否发送成功
     """
+    # 美化和截断消息
+    from shared.message_utils import format_message
+    content = format_message(content, max_bytes=4096)
+    
     send_start_time = time.time()
     logger.info(f"[发送消息] 开始发送: bot_id={bot_id}, user_id={user_id}, content_length={len(content)}")
     

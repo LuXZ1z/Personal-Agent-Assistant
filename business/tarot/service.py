@@ -14,6 +14,7 @@ from business.tarot.prompts import (
     FIVE_CARD_PROMPT
 )
 from shared.utils import setup_logger
+from shared.message_utils import format_message
 
 from interfaces.wechat.session_manager import session_manager
 from interfaces.wechat.task_manager import task_manager
@@ -175,6 +176,9 @@ class TarotService:
                     "message": "❌ 任务已取消\n\n发送\"0\"返回子菜单"
                 }
             
+            # 美化AI返回的解读结果
+            interpretation = format_message(interpretation)
+            
             # 构建消息
             position_emoji = "⬆️" if card.get("upright", True) else "⬇️"
             message = f"✨ 你抽到的牌 ✨\n\n"
@@ -271,6 +275,9 @@ class TarotService:
                     "message": "❌ 任务已取消\n\n发送\"0\"返回子菜单"
                 }
             
+            # 美化AI返回的解读结果
+            interpretation = format_message(interpretation)
+            
             message = f"✨ 你抽到的三张牌 ✨\n\n"
             message += f"📜 过去：{cards[0]['name']} {'⬆️' if cards[0].get('upright', True) else '⬇️'}\n"
             message += f"💫 现在：{cards[1]['name']} {'⬆️' if cards[1].get('upright', True) else '⬇️'}\n"
@@ -365,6 +372,9 @@ class TarotService:
                     "type": "info",
                     "message": "❌ 任务已取消\n\n发送\"0\"返回子菜单"
                 }
+            
+            # 美化AI返回的解读结果
+            interpretation = format_message(interpretation)
             
             message = f"✨ 你抽到的五张牌 ✨\n\n"
             positions = ["现状", "挑战", "过去", "未来", "结果"]
