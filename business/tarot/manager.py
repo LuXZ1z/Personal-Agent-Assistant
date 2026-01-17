@@ -74,7 +74,7 @@ class TarotManager:
             print("🔮"*30 + "\n")
             
             # 抽牌
-            card = self.tarot_service.draw_card()
+            card, _ = self.tarot_service.draw_card()
             
             # 显示牌信息
             position_emoji = "⬆️" if card.get("upright", True) else "⬇️"

@@ -85,42 +85,83 @@ class TarotService:
         
         return deck
     
-    def draw_card(self) -> Dict[str, Any]:
+    def _shuffle_deck(self) -> List[Dict[str, Any]]:
         """
-        抽取一张牌
+        洗牌（创建牌组的副本并打乱顺序）
         
         Returns:
-            抽取的牌（包含正位/逆位信息）
+            打乱后的牌组副本
         """
-        card = random.choice(self.deck)
+        shuffled = self.deck.copy()
+        random.shuffle(shuffled)
+        return shuffled
+    
+    def draw_card(self, available_deck: List[Dict[str, Any]] = None) -> tuple:
+        """
+        从可用牌组中抽取一张牌（不放回）
+        
+        Args:
+            available_deck: 可用的牌组（如果为None，则从完整牌组中随机抽取，不修改牌组）
+        
+        Returns:
+            如果 available_deck 为 None，返回 (牌, None)
+            如果 available_deck 不为 None，返回 (牌, 剩余牌组)
+        """
+        if available_deck is None:
+            # 向后兼容：从完整牌组中随机抽取（不修改牌组）
+            card = random.choice(self.deck)
+            is_upright = random.choice([True, False])
+            return {
+                **card,
+                "upright": is_upright,
+                "position": "正位" if is_upright else "逆位"
+            }, None
+        
+        # 从指定牌组中抽取（不放回）
+        if not available_deck:
+            # 如果牌组为空，重新创建
+            available_deck = self._create_deck()
+            random.shuffle(available_deck)
+        
+        card = available_deck.pop(0)  # 从牌组中移除第一张牌
         is_upright = random.choice([True, False])
         
         return {
             **card,
             "upright": is_upright,
             "position": "正位" if is_upright else "逆位"
-        }
+        }, available_deck
     
     def draw_spread(self, spread_type: str = "single") -> List[Dict[str, Any]]:
         """
-        抽取牌阵
+        抽取牌阵（确保同一牌阵中不会重复）
         
         Args:
             spread_type: 牌阵类型 (single, three_card, five_card)
             
         Returns:
-            抽取的牌列表
+            抽取的牌列表（确保不重复）
         """
+        # 确定需要抽取的牌数
         if spread_type == "single":
-            return [self.draw_card()]
+            num_cards = 1
         elif spread_type == "three_card":
-            # 三张牌：过去-现在-未来
-            return [self.draw_card() for _ in range(3)]
+            num_cards = 3
         elif spread_type == "five_card":
-            # 五张牌：凯尔特十字简化版
-            return [self.draw_card() for _ in range(5)]
+            num_cards = 5
         else:
-            return [self.draw_card()]
+            num_cards = 1
+        
+        # 洗牌，创建可用牌组
+        available_deck = self._shuffle_deck()
+        
+        # 抽取指定数量的牌（不放回）
+        drawn_cards = []
+        for _ in range(num_cards):
+            card, available_deck = self.draw_card(available_deck)
+            drawn_cards.append(card)
+        
+        return drawn_cards
     
     def get_spread_positions(self, spread_type: str) -> List[str]:
         """
