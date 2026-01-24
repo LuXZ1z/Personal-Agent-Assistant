@@ -50,17 +50,11 @@
 1. 用电脑登录[企业微信管理后台](https://work.weixin.qq.com/wework_admin/loginpage_wx)
 2. 点击左侧菜单 **"我的企业"**
 3. 滚动到页面底部，找到 **"企业ID"**
-4. 复制企业ID
+4. 复制企业ID（以 "ww" 开头）
 
 **记录到配置**：
 ```yaml
 wechat_corp_id: "ww1234567890abcdef"  # 你的企业ID
-```
-
-或（用于测试脚本）：
-```env
-WECHAT_CORP_ID=ww1234567890abcdef
-WECHAT_RECEIVE_ID=ww1234567890abcdef  # 与 CORP_ID 相同
 ```
 
 ---
@@ -113,14 +107,12 @@ wechat_corp_secret: "abc123def456ghi789jkl012mno345pq"  # 你的Secret
 ### 步骤 5: 配置接收消息
 
 在应用详情页面：
-
 1. 滚动到 **"接收消息"** 部分
 2. 点击 **"设置API接收"**
 
 #### 5.1 生成 Token 和 EncodingAESKey
 
 在弹出的配置页面：
-
 1. **URL**：先留空（稍后填写）
 2. **Token**：点击 **"随机获取"** 按钮生成
 3. **EncodingAESKey**：点击 **"随机获取"** 按钮生成
@@ -138,16 +130,10 @@ wechat_encoding_aes_key: "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFG"  # 生成
 ### 步骤 6: 配置企业可信IP
 
 在应用详情页面：
-
 1. 找到 **"企业可信IP"** 部分
 2. 点击 **"配置"**
 3. 输入你的服务器公网IP地址
 4. 点击 **"确定"**
-
-**示例**：
-```
-123.456.789.0
-```
 
 **提示**：如果不配置可信IP，将无法主动发送消息（只能接收消息）。
 
@@ -175,22 +161,9 @@ bots:
     features:
       - tarot
       - essay
-  
-  # 第二个机器人（可选）
-  family:
-    name: "家庭助手"
-    enabled: true
-    wechat_token: "另一个Token"
-    wechat_encoding_aes_key: "另一个EncodingAESKey"
-    wechat_corp_id: "你的企业ID"  # 同一个企业
-    wechat_corp_secret: "另一个Secret"
-    wechat_agent_id: 1000003  # 不同的应用
-    features:
-      - accounting
-      - employee
 ```
 
-#### 方式B：使用 .env 文件（仅用于单机器人测试）
+#### 方式B：使用 .env.test 文件（仅用于单机器人测试）
 
 创建或编辑 `/home/Personal-Agent-Assistant/.env.test`：
 
@@ -223,27 +196,7 @@ cd /home/Personal-Agent-Assistant
 python minimal_callback_verify.py
 ```
 
-**期望输出**：
-```
-============================================================
-启动企业微信回调验证服务器
-配置文件: .env.test
-Token: Abc123Def4...
-EncodingAESKey: abcdefghij...
-receive_id: 'ww1234567890abcdef'
-============================================================
-服务器配置:
-  地址: 0.0.0.0
-  端口: 8024
-============================================================
-回调URL格式:
-  http://你的域名或IP:8024/ai-bot/callback/你的botid
-============================================================
-INFO:     Started server process [12345]
-INFO:     Waiting for application startup.
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://0.0.0.0:8024
-```
+**详细用法**：参考 [WECHAT_TEST_GUIDE.md](./docs/WECHAT_TEST_GUIDE.md)
 
 #### 工具B：minimal_test_server.py（完整测试，支持消息收发）
 
@@ -254,20 +207,7 @@ cd /home/Personal-Agent-Assistant
 python minimal_test_server.py
 ```
 
-**期望输出**：
-```
-============================================================
-最小化测试服务器
-============================================================
-已加载 2 个机器人: ['test', 'family']
-端口: 8024
-============================================================
-
-✓ 加载机器人: test - 测试机器人 (receive_id='ww1234567890abcdef')
-✓ 加载机器人: family - 家庭助手 (receive_id='ww1234567890abcdef')
-INFO:     Started server process [12345]
-INFO:     Uvicorn running on http://0.0.0.0:8024
-```
+**详细用法**：参考 [MINIMAL_TEST_GUIDE.md](./docs/MINIMAL_TEST_GUIDE.md)
 
 ---
 
@@ -300,7 +240,6 @@ http://123.456.789.0:8024/ai-bot/callback/test
 点击 **"保存"** 按钮后，企业微信会立即发送 GET 请求验证URL。
 
 **查看服务器日志**，应该显示：
-
 ```
 ============================================================
 收到URL验证请求
@@ -421,6 +360,17 @@ SERVER_PORT=8024
 
 ## 🔧 测试工具使用
 
+### 工具对比
+
+| 特性 | minimal_callback_verify.py | minimal_test_server.py |
+|------|---------------------------|------------------------|
+| **用途** | 仅URL验证 | 完整消息收发测试 |
+| **配置方式** | .env.test 文件 | config/bots.yaml |
+| **支持多机器人** | ❌ 否 | ✅ 是 |
+| **处理消息** | ❌ 否 | ✅ 是 |
+| **代码行数** | ~160行 | ~240行 |
+| **适用场景** | 首次配置验证 | 完整功能测试 |
+
 ### 工具1: minimal_callback_verify.py
 
 **用途**：仅用于回调URL验证（不处理消息）
@@ -436,9 +386,7 @@ SERVER_PORT=8024
 python minimal_callback_verify.py
 ```
 
-**端点**：
-- GET `/ai-bot/callback/{botid}` - URL验证
-- GET `/health` - 健康检查
+**详细文档**：参考 [WECHAT_TEST_GUIDE.md](./docs.WECHAT_TEST_GUIDE.md)
 
 ---
 
@@ -458,23 +406,7 @@ python minimal_callback_verify.py
 python minimal_test_server.py
 ```
 
-或使用启动脚本：
-```bash
-./test_minimal.sh
-```
-
-**端点**：
-- GET `/ai-bot/callback/{botid}` - URL验证
-- POST `/ai-bot/callback/{botid}` - 消息处理
-- GET `/health` - 健康检查
-
-**测试流程**：
-1. 启动服务器
-2. 配置回调URL并验证
-3. 手机端发送消息
-4. 查看日志确认收发
-5. 测试多条连续消息
-6. 测试不同机器人
+**详细文档**：参考 [MINIMAL_TEST_GUIDE.md](./docs/MINIMAL_TEST_GUIDE.md)
 
 ---
 
@@ -523,18 +455,12 @@ bots:
     features:
       - accounting
       - employee
-  
-  work:
-    name: "工作机器人"
-    enabled: false  # 暂时禁用
-    # ...
 ```
 
 #### 3. 配置不同的回调URL
 
 - test: `http://123.456.789.0:8024/ai-bot/callback/test`
 - family: `http://123.456.789.0:8024/ai-bot/callback/family`
-- work: `http://123.456.789.0:8024/ai-bot/callback/work`
 
 #### 4. 启动服务器
 
@@ -544,7 +470,6 @@ python minimal_test_server.py
 
 或启动完整服务：
 ```bash
-cd /home/Personal-Agent-Assistant
 python interfaces/wechat/server.py
 ```
 
@@ -563,29 +488,6 @@ python interfaces/wechat/server.py
 #   - 使用 family 的 agent_id/secret 发送回复
 #   - 根据 family.features 决定可用功能
 ```
-
-### 用户识别
-
-系统通过企业微信返回的 `userid` 识别不同用户：
-
-```python
-# 解密后的消息包含：
-# - FromUserName: 用户的 userid（如 "ZhangSan"）
-# - ToUserName: 企业ID
-# - Content: 消息内容
-#
-# 系统会为每个 (bot_id, user_id) 组合维护独立的会话状态
-```
-
-**示例**：
-- 张三向 test 机器人发消息 → 会话ID: `test_ZhangSan`
-- 张三向 family 机器人发消息 → 会话ID: `family_ZhangSan`
-- 李四向 test 机器人发消息 → 会话ID: `test_LiSi`
-
-每个会话维护独立的：
-- 业务类型（accounting / tarot / essay 等）
-- 子菜单状态
-- 上下文数据
 
 ---
 
@@ -673,15 +575,7 @@ python interfaces/wechat/server.py
    return PlainTextResponse("success")
    ```
 
-2. 检查日志文件确认死锁：
-   ```bash
-   tail -f logs/assistant_*.log
-   ```
-
-3. 参考故障复盘文档：
-   ```bash
-   cat error_log/INCIDENT_2026-01-17_wechat_one_message_deadlock.md
-   ```
+2. 参考 `minimal_test_server.py` 的实现方式
 
 ---
 
@@ -815,6 +709,8 @@ tail -f logs/assistant_*.log | grep "内容:"
 - [消息加密解密说明](https://developer.work.weixin.qq.com/document/path/90968)
 - [发送应用消息API](https://developer.work.weixin.qq.com/document/path/90236)
 - [接收消息与事件](https://developer.work.weixin.qq.com/document/path/90239)
+- [WECHAT_TEST_GUIDE.md](./WECHAT_TEST_GUIDE.md) - 回调验证工具详细说明
+- [MINIMAL_TEST_GUIDE.md](./docs/MINIMAL_TEST_GUIDE.md) - 消息收发测试详细说明
 
 ---
 
@@ -832,4 +728,3 @@ tail -f logs/assistant_*.log | grep "内容:"
 3. 根据需要调整 `bots.yaml` 中的功能配置
 
 祝使用愉快！🚀
-

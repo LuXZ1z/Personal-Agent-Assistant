@@ -1,0 +1,70 @@
+# 机器人配置文件
+# 每个机器人可以配置不同的功能集和微信参数
+bots:
+  test:
+    name: "测试机器人"
+    wechat_token: "xxx"
+    wechat_encoding_aes_key: "xxx"
+    wechat_corp_id: "xxx"
+    wechat_corp_secret: "xxx"
+    wechat_agent_id: 1000002
+    enabled: true
+    # 功能列表：此机器人只开放3个功能
+    features:  
+      - accounting
+      - tarot
+    
+  family:
+    name: "家庭机器人"
+    wechat_token: "xxx"
+    wechat_encoding_aes_key: "xxx"
+    wechat_corp_id: "xxx"
+    wechat_corp_secret: "xxx"
+    wechat_agent_id: 1000002
+    enabled: true
+    # 功能列表：此机器人开放全部功能
+    features:
+      - accounting
+      - essay
+      - employee
+      - tarot
+    
+  beng1:
+    name: "机器人1"
+    wechat_token: "xxx"
+    wechat_encoding_aes_key: "xxx"
+    wechat_corp_id: "xxx"
+    wechat_corp_secret: "xxx"
+    wechat_agent_id: 1000002
+    enabled: true
+    features:
+      - accounting
+      - essay
+      - employee
+      - tarot
+
+  beng2:
+      name: "beng机器人2"
+      wechat_token: "xxx"
+      wechat_encoding_aes_key: "xxx"
+      wechat_corp_id: "xxx"
+      wechat_corp_secret: "xxx"
+      wechat_agent_id: 1000002
+      enabled: true
+      # 功能列表：此机器人只开放员工管理
+      features:
+        - accounting
+        - tarot
+
+  # beng3:
+  #   name: "beng机器人1"
+  #   wechat_token: "hr_token_xxx"
+  #   wechat_encoding_aes_key: "hr_aes_key_xxx"
+  #   wechat_corp_id: "wwzzz"
+  #   wechat_corp_secret: "secret_zzz"
+  #   wechat_agent_id: 1000003
+  #   enabled: true
+  #   # 功能列表：此机器人只开放员工管理
+  #   features:
+  #     - accounting
+  #     - tarot
