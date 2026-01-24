@@ -28,7 +28,7 @@ config/system.yaml
 
 # 环境变量
 .env
-.env.test
+
 
 # 数据库
 *.db

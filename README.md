@@ -116,6 +116,19 @@ pip install -r requirements.txt
 
 **详细配置指南**：请参考 [WECHAT_API_SETUP_GUIDE.md](./WECHAT_API_SETUP_GUIDE.md)
 
+#### 3. 测试工具配置（可选）
+
+项目提供了两个测试工具，用于验证企业微信配置：
+
+- **minimal_callback_verify.py** - 仅用于回调URL验证（最简单）
+  - 使用 `.env.test` 配置文件
+  - 详细用法：参考 [WECHAT_TEST_GUIDE.md](./docs/WECHAT_TEST_GUIDE.md)
+
+- **minimal_test_server.py** - 完整的消息收发测试（推荐）
+  - 使用 `config/bots.yaml` 配置文件
+  - 支持多机器人测试
+  - 详细用法：参考 [MINIMAL_TEST_GUIDE.md](./docs/MINIMAL_TEST_GUIDE.md)
+
 ### 运行
 
 #### 方式一：微信模式（推荐）
@@ -156,6 +169,23 @@ python -m business.accounting.manager --debug
 # 测试塔罗牌功能
 python -m business.tarot.manager --debug
 ```
+
+#### 方式四：微信配置测试（首次配置推荐）
+```bash
+# 1. 仅验证回调URL（最简单）
+python minimal_callback_verify.py
+
+# 2. 完整消息收发测试（推荐）
+python minimal_test_server.py
+```
+
+**测试工具说明**：
+- `minimal_callback_verify.py` - 仅用于验证企业微信回调URL是否正确配置
+- `minimal_test_server.py` - 完整的消息收发测试，支持多机器人
+
+详细用法请参考：
+- [回调验证工具指南](./docs/WECHAT_TEST_GUIDE.md)
+- [消息收发测试指南](./docs/MINIMAL_TEST_GUIDE.md)
 
 ## 💡 使用示例
 
@@ -256,11 +286,15 @@ BUSINESS_CONFIG = {
 
 ## 📖 详细文档
 
-- [统一架构说明](docs/UNIFIED_ARCHITECTURE.md) - 了解系统架构和设计理念
-- [企业微信API配置指南](WECHAT_API_SETUP_GUIDE.md) - 完整的微信配置和测试指南
-- [微信测试指南](docs/WECHAT_TEST_GUIDE.md) - 微信功能测试说明
-- [数据库接口](core/database/README.md) - 数据库操作接口文档
-- [LLM接口](core/llm/README.md) - LLM调用接口文档
+### 配置与测试
+- [企业微信API配置指南](./WECHAT_API_SETUP_GUIDE.md) - 完整的微信配置和测试指南
+- [回调验证工具指南](./docs/WECHAT_TEST_GUIDE.md) - minimal_callback_verify.py 使用说明
+- [消息收发测试指南](./docs/MINIMAL_TEST_GUIDE.md) - minimal_test_server.py 使用说明
+
+### 架构与开发
+- [统一架构说明](./docs/UNIFIED_ARCHITECTURE.md) - 了解系统架构和设计理念
+- [数据库接口](./core/database/README.md) - 数据库操作接口文档
+- [LLM接口](./core/llm/README.md) - LLM调用接口文档
 
 ## 🌈 愿景
 
