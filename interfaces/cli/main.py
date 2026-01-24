@@ -1,17 +1,27 @@
 """
 命令行界面主入口
 完全本地运行，通过数字菜单选择业务，直接调用业务管理器
+支持两种模式：
+1. 交互式模式（默认）：用于本地测试
+2. 服务端模式（--server）：从Redis队列消费消息，处理业务逻辑
 """
 import sys
+import time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from typing import Optional
+import redis
+from redis.exceptions import RedisError
 from core.database import get_database_manager
 from shared.models import StructuredRecord
 from shared.utils import setup_logger
+from shared.config import settings
 from shared.menu_config import get_all_businesses, generate_menu_text, get_business_by_id_filtered, BUSINESS_CONFIG
+from shared.message_types import BusinessRequest, BusinessResponse
 from interfaces.cli.service_adapter import ServiceAdapter
+from interfaces.wechat.message_router import message_router
+from interfaces.wechat.session_manager import session_manager
 import importlib
 
 logger = setup_logger(__name__)
@@ -186,13 +196,176 @@ class CLIMain:
         print("\n测试结束")
 
 
+class CLIServer:
+    """CLI服务端：从Redis队列消费消息，处理业务逻辑，返回结果"""
+    
+    def __init__(self):
+        """初始化CLI服务端"""
+        try:
+            self.redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+            self.redis_client.ping()
+            logger.info(f"CLI服务端初始化成功，Redis连接: {settings.redis_url}")
+        except RedisError as e:
+            logger.error(f"CLI服务端Redis连接失败: {e}")
+            raise
+    
+    def _restore_session(self, session_dict: dict):
+        """
+        恢复会话状态
+        
+        Args:
+            session_dict: 会话状态字典
+        """
+        bot_id = session_dict.get("bot_id")
+        user_id = session_dict.get("user_id")
+        if not bot_id or not user_id:
+            return
+        
+        # 获取或创建会话
+        session = session_manager.get_session(bot_id, user_id)
+        
+        # 恢复会话状态
+        session.business_type = session_dict.get("business_type", "menu")
+        session.sub_menu = session_dict.get("sub_menu")
+        session.table_name = session_dict.get("table_name")
+        session.context = session_dict.get("context", {})
+        
+        logger.debug(f"恢复会话状态: bot_id={bot_id}, user_id={user_id}, business_type={session.business_type}")
+    
+    def _process_message(self, request: BusinessRequest) -> BusinessResponse:
+        """
+        处理业务消息
+        
+        Args:
+            request: 业务请求
+            
+        Returns:
+            业务响应
+        """
+        try:
+            logger.info(f"[CLI服务端] 处理消息: request_id={request.request_id}, bot_id={request.bot_id}, user_id={request.user_id}, content={request.content[:50]}")
+            
+            # 恢复会话状态
+            self._restore_session(request.session)
+            
+            # 调用消息路由器处理消息
+            result = message_router.route_message(
+                bot_id=request.bot_id,
+                user_id=request.user_id,
+                content=request.content
+            )
+            
+            # 获取当前会话状态（处理后的状态）
+            session = session_manager.get_session(request.bot_id, request.user_id)
+            session_dict = session.to_dict()
+            session_dict.pop('last_activity', None)
+            session_dict.pop('expire_at', None)
+            
+            # 在结果中包含bot_id和user_id，以便Server知道发送给谁
+            result_with_metadata = {
+                **result,
+                "bot_id": request.bot_id,
+                "user_id": request.user_id,
+                "session": session_dict  # 更新后的会话状态
+            }
+            
+            # 创建响应
+            response = BusinessResponse(
+                request_id=request.request_id,
+                result=result_with_metadata
+            )
+            
+            logger.info(f"[CLI服务端] 处理完成: request_id={request.request_id}, type={result.get('type')}")
+            return response
+            
+        except Exception as e:
+            logger.error(f"[CLI服务端] 处理消息失败: request_id={request.request_id}, error={e}", exc_info=True)
+            # 返回错误响应
+            return BusinessResponse(
+                request_id=request.request_id,
+                result={
+                    "type": "error",
+                    "message": f"处理消息时发生错误: {str(e)}",
+                    "bot_id": request.bot_id,
+                    "user_id": request.user_id
+                }
+            )
+    
+    def run(self):
+        """运行服务端主循环"""
+        logger.info("CLI服务端开始运行，等待消息...")
+        logger.info("队列名称: wechat_messages")
+        
+        try:
+            while True:
+                try:
+                    # 从队列右侧弹出消息（FIFO，阻塞等待）
+                    message_data = self.redis_client.brpop("wechat_messages", timeout=1)
+                    
+                    if message_data:
+                        # message_data 是 (queue_name, message_json) 元组
+                        message_json = message_data[1]
+                        
+                        try:
+                            # 解析消息
+                            request = BusinessRequest.model_validate_json(message_json)
+                            
+                            # 处理消息
+                            response = self._process_message(request)
+                            
+                            # 发送响应到响应队列
+                            response_json = response.model_dump_json()
+                            self.redis_client.lpush("wechat_responses", response_json)
+                            
+                            logger.info(f"[CLI服务端] 响应已发送: request_id={request.request_id}")
+                            
+                        except Exception as e:
+                            logger.error(f"[CLI服务端] 处理消息异常: {e}", exc_info=True)
+                            # 如果是BusinessRequest解析失败，可能是其他类型的消息，忽略
+                            if "BusinessRequest" not in str(e):
+                                logger.warning(f"[CLI服务端] 跳过非业务消息: {message_json[:100]}")
+                
+                except KeyboardInterrupt:
+                    logger.info("收到中断信号，停止CLI服务端")
+                    break
+                except Exception as e:
+                    logger.error(f"[CLI服务端] 循环异常: {e}", exc_info=True)
+                    time.sleep(1)  # 出错后短暂休眠
+                    
+        except Exception as e:
+            logger.error(f"[CLI服务端] 运行异常: {e}", exc_info=True)
+        finally:
+            logger.info("CLI服务端已停止")
+
+
 def main():
     """主函数，支持命令行参数"""
     import argparse
     parser = argparse.ArgumentParser(description='本地业务测试')
     parser.add_argument('--bot', type=str, help='指定机器人ID (如: test, prod, hr)')
+    parser.add_argument('--server', action='store_true', help='启动服务端模式（从队列消费消息）')
     args = parser.parse_args()
     
+    # 服务端模式
+    if args.server:
+        try:
+            print("\n" + "="*60)
+            print("CLI服务端模式")
+            print("="*60)
+            print("从Redis队列消费消息，处理业务逻辑")
+            print("按 Ctrl+C 停止服务端\n")
+            
+            server = CLIServer()
+            server.run()
+        except KeyboardInterrupt:
+            print("\n\n服务端已停止")
+        except Exception as e:
+            print(f"\n❌ 服务端启动失败: {e}")
+            import traceback
+            traceback.print_exc()
+        return
+    
+    # 交互式模式（默认）
     try:
         cli = CLIMain(bot_id=args.bot)
         cli.run()

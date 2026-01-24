@@ -2,6 +2,11 @@
 FastAPI服务器
 处理微信HTTP接口
 """
+import sys
+from pathlib import Path
+# 添加项目根目录到Python路径
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
 import json
 import logging
 import asyncio
@@ -15,7 +20,7 @@ from fastapi.responses import Response, PlainTextResponse
 import uvicorn
 
 from shared.config import settings
-from shared.message_types import WeChatMessage
+from shared.message_types import WeChatMessage, BusinessRequest, BusinessResponse
 from interfaces.wechat.message_crypt import WeChatMessageCrypt, WeChatCryptError
 from interfaces.wechat.queue_client import QueueClient
 from interfaces.wechat.response_manager import ResponseManager
@@ -447,85 +452,45 @@ def _make_text_stream(stream_id: str, content: str, finish: bool) -> str:
 async def _process_message_async(bot_id: str, user_id: str, content: str, msg_id: str):
     """
     后台异步处理消息
-    这个函数在后台运行，不会阻塞主请求
+    将消息发送到队列，由CLI服务端处理业务逻辑
     """
     process_start_time = time.time()
     try:
         logger.info(f"[后台任务] ======== 开始处理消息 ========")
         logger.info(f"[后台任务] botid={bot_id}, user_id={user_id}, content={content[:50]}, msg_id={msg_id}")
         
-        # 检查是否需要调用LLM（通过检查业务类型和内容）
+        # 获取会话状态
         logger.info(f"[后台任务] 步骤1: 获取会话状态...")
         session = session_manager.get_session(bot_id, user_id)
         logger.info(f"[后台任务] ✓ 会话状态: business_type={session.business_type}, sub_menu={session.sub_menu}")
         
-        # 先检查是否有正在处理的任务
-        task = task_manager.get_task(bot_id, user_id)
-        if task and task.status == "processing":
-            logger.info(f"[后台任务] ⚠ 任务正在处理中，跳过发送正在处理消息: task_type={task.task_type}")
-        else:
-            needs_llm = False
-            task_type = None
-            
-            if session.business_type == "tarot":
-                # 检查是否在占卜状态（不是主菜单）
-                if session.sub_menu in ["single", "three_card", "five_card"]:
-                    # 检查内容不是"0"（返回菜单）
-                    if content.strip() != "0":
-                        needs_llm = True
-                        task_type = f"tarot_{session.sub_menu}"
-                        logger.info(f"[后台任务] 需要调用LLM: task_type={task_type}")
-            
-            # 如果需要调用LLM，先发送"正在处理"消息
-            if needs_llm:
-                processing_message = f"⏳ 正在调用大模型处理中...\n\n任务类型: {task_type}\n内容: {content[:50]}\n\n请稍候，处理完成后会立即返回结果"
-                logger.info(f"[后台任务] 步骤2: 发送正在处理消息...")
-                # 使用线程池执行同步调用，避免阻塞事件循环
-                await asyncio.to_thread(send_text_message, bot_id, user_id, processing_message)
-                logger.info(f"[后台任务] ✓ 已发送正在处理消息")
+        # 将会话状态序列化
+        session_dict = session.to_dict()
+        # 移除不能序列化的字段
+        session_dict.pop('last_activity', None)
+        session_dict.pop('expire_at', None)
         
-        # 使用消息路由器处理消息（会检查任务状态）
-        # 在线程池中执行，因为route_message是同步的且可能耗时
-        logger.info(f"[后台任务] 步骤3: 调用消息路由器...")
-        result = await asyncio.to_thread(message_router.route_message, bot_id, user_id, content)
-        logger.info(f"[后台任务] ✓ 消息路由器返回: type={result.get('type')}, has_message={bool(result.get('message'))}")
-        logger.debug(f"[后台任务] 完整结果: {json.dumps(result, ensure_ascii=False)[:200]}...")
+        # 创建业务请求
+        request = BusinessRequest(
+            bot_id=bot_id,
+            user_id=user_id,
+            content=content,
+            msg_id=msg_id,
+            session=session_dict
+        )
         
-        # 获取响应消息
-        if result.get("type") == "error":
-            response_message = f"❌ {result.get('message', '处理失败')}"
-        elif result.get("type") == "processing":
-            # 如果返回processing类型，说明任务正在处理中
-            response_message = result.get("message", "正在处理中...")
-        else:
-            response_message = result.get("message", "处理完成")
-        
-        logger.info(f"[后台任务] 步骤4: 准备发送响应消息...")
-        logger.info(f"[后台任务] 响应消息类型: {result.get('type')}, 消息长度: {len(response_message)}")
-        logger.debug(f"[后台任务] 响应消息内容前200字符: {response_message[:200]}")
-        
-        # 如果之前已经发送了"正在处理"消息，且现在返回的是最终结果，直接发送结果
-        # 如果返回的是processing类型，说明任务还在处理中，不发送（因为之前已经发送了）
-        if needs_llm and result.get("type") == "processing":
-            # 任务正在处理中，不发送重复消息
-            logger.info(f"[后台任务] ⚠ 任务正在处理中，跳过发送（已发送正在处理消息）")
-        else:
-            # 使用主动发送 API 发送消息（企业微信推荐方式）
-            # 使用线程池执行同步调用，避免阻塞事件循环
-            logger.info(f"[后台任务] 发送响应消息到用户...")
-            success = await asyncio.to_thread(send_text_message, bot_id, user_id, response_message)
-            
-            if success:
-                logger.info(f"[后台任务] ✓ 响应消息发送成功: botid={bot_id}, user_id={user_id}, response_length={len(response_message)}")
-            else:
-                logger.error(f"[后台任务] ✗ 响应消息发送失败: botid={bot_id}, user_id={user_id}")
+        # 发送到队列
+        logger.info(f"[后台任务] 步骤2: 发送业务请求到队列...")
+        logger.info(f"[后台任务] request_id={request.request_id}")
+        await asyncio.to_thread(queue_client.send_business_message, request)
+        logger.info(f"[后台任务] ✓ 业务请求已发送到队列，等待CLI服务端处理")
         
         elapsed = time.time() - process_start_time
-        logger.info(f"[后台任务] ======== 消息处理完成，总耗时: {elapsed:.3f}秒 ========")
+        logger.info(f"[后台任务] ======== 消息已转发到队列，耗时: {elapsed:.3f}秒 ========")
         
     except Exception as e:
         elapsed = time.time() - process_start_time
-        logger.error(f"[后台任务] ✗ 处理消息失败: botid={bot_id}, user_id={user_id}, content={content[:30]}, error={e}, 耗时={elapsed:.3f}秒", exc_info=True)
+        logger.error(f"[后台任务] ✗ 转发消息失败: botid={bot_id}, user_id={user_id}, content={content[:30]}, error={e}, 耗时={elapsed:.3f}秒", exc_info=True)
         # 发送错误消息给用户
         try:
             error_message = f"❌ 处理消息时发生错误: {str(e)}"
@@ -541,6 +506,8 @@ async def startup_event():
     """应用启动时的后台任务"""
     logger.info("启动响应队列处理后台任务")
     asyncio.create_task(background_response_processor())
+    logger.info("启动业务响应队列监听任务")
+    asyncio.create_task(background_business_response_processor())
     logger.info("启动任务清理后台任务")
     asyncio.create_task(background_task_cleanup())
 
@@ -553,6 +520,71 @@ async def background_response_processor():
             await asyncio.sleep(0.5)  # 每0.5秒检查一次
         except Exception as e:
             logger.error(f"后台响应处理异常: {e}")
+            await asyncio.sleep(1)
+
+
+async def background_business_response_processor():
+    """后台处理业务响应队列的任务（从CLI服务端接收结果并发送回微信）"""
+    import redis
+    from redis.exceptions import RedisError
+    
+    try:
+        redis_client = redis.from_url(settings.redis_url, decode_responses=True)
+        redis_client.ping()
+        logger.info("业务响应队列监听器初始化成功")
+    except RedisError as e:
+        logger.error(f"业务响应队列监听器Redis连接失败: {e}")
+        return
+    
+    while True:
+        try:
+            # 从队列右侧弹出消息（FIFO）
+            message_json = redis_client.rpop("wechat_responses")
+            if message_json:
+                try:
+                    response = BusinessResponse.model_validate_json(message_json)
+                    logger.info(f"[业务响应] 收到响应: request_id={response.request_id}")
+                    
+                    # 从响应中提取信息
+                    result = response.result
+                    bot_id = result.get("bot_id")
+                    user_id = result.get("user_id")
+                    response_type = result.get("type")
+                    response_message = result.get("message", "")
+                    
+                    if not bot_id or not user_id:
+                        logger.warning(f"[业务响应] 响应缺少bot_id或user_id，跳过: request_id={response.request_id}")
+                        continue
+                    
+                    # 处理响应消息
+                    if response_type == "error":
+                        final_message = f"❌ {response_message}"
+                    elif response_type == "processing":
+                        # 处理中，发送"正在处理"消息
+                        final_message = response_message
+                    else:
+                        final_message = response_message
+                    
+                    # 发送消息回微信
+                    logger.info(f"[业务响应] 发送响应消息到用户: bot_id={bot_id}, user_id={user_id}, type={response_type}")
+                    success = await asyncio.to_thread(send_text_message, bot_id, user_id, final_message)
+                    
+                    if success:
+                        logger.info(f"[业务响应] ✓ 响应消息发送成功: request_id={response.request_id}")
+                    else:
+                        logger.error(f"[业务响应] ✗ 响应消息发送失败: request_id={response.request_id}")
+                    
+                except Exception as e:
+                    logger.error(f"[业务响应] 处理响应消息失败: {e}", exc_info=True)
+            
+            # 短暂休眠避免CPU占用过高
+            await asyncio.sleep(0.1)
+            
+        except KeyboardInterrupt:
+            logger.info("收到中断信号，停止业务响应队列监听器")
+            break
+        except Exception as e:
+            logger.error(f"业务响应队列监听异常: {e}")
             await asyncio.sleep(1)
 
 

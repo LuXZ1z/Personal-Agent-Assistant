@@ -165,3 +165,31 @@ class TarotResult(BaseModel):
             datetime: lambda v: v.isoformat()
         }
 
+
+class BusinessRequest(BaseModel):
+    """业务处理请求消息（Server -> CLI）"""
+    request_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
+    bot_id: str
+    user_id: str
+    content: str
+    msg_id: str
+    session: Dict[str, Any] = Field(default_factory=dict)  # 会话状态
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+
+
+class BusinessResponse(BaseModel):
+    """业务处理响应消息（CLI -> Server）"""
+    request_id: str
+    result: Dict[str, Any] = Field(default_factory=dict)  # message_router 返回的结果
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    
+    class Config:
+        json_encoders = {
+            datetime: lambda v: v.isoformat()
+        }
+

@@ -47,6 +47,7 @@ class SessionState:
             "bot_id": self.bot_id,
             "user_id": self.user_id,
             "business_type": self.business_type,
+            "sub_menu": self.sub_menu,
             "table_name": self.table_name,
             "last_activity": self.last_activity,
             "expire_at": self.expire_at,
