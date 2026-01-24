@@ -23,7 +23,7 @@ class EmployeeService:
         self.user_id = user_id
         self.bot_id = bot_id
         # 使用 Manager 层，Manager 使用 core 的基础能力
-        self.manager = EmployeeManager(user_id=user_id, debug=False)
+        self.manager = EmployeeManager(user_id=user_id, bot_id=bot_id, debug=False)
     
     def show_sub_menu(self) -> Dict[str, Any]:
         """显示员工管理子菜单"""
@@ -95,9 +95,13 @@ class EmployeeService:
             session_manager.reset_to_menu(self.bot_id, self.user_id)
             try:
                 from interfaces.wechat.menu_handler import MenuHandler
+                from interfaces.wechat.bot_manager import bot_manager
+                # 获取机器人的功能列表，确保只显示允许的功能
+                allowed_features = bot_manager.get_features(self.bot_id)
+                return MenuHandler.show_menu(self.user_id, allowed_features=allowed_features)
             except ImportError:
                 from interfaces.cli.menu import MenuHandler
-            return MenuHandler.show_menu()
+                return MenuHandler.show_menu()
         elif choice == "1":
             session_manager.set_sub_menu(self.bot_id, self.user_id, "add")
             # 获取已有员工列表，提示用户格式
@@ -168,7 +172,8 @@ class EmployeeService:
             records = self.manager.db.query_records(
                 filters=filters,
                 limit=100,
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             employees = set()
@@ -215,7 +220,8 @@ class EmployeeService:
                 record_type=structured_data.get('type', '员工'),
                 table_name=self.manager.table_name,
                 metadata=None,
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             fields = structured_data.get('fields', {})
@@ -335,7 +341,8 @@ class EmployeeService:
                 filters=filters,
                 limit=20,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -548,7 +555,7 @@ class EmployeeService:
         
         try:
             record_id = int(content.strip())
-            success = self.manager.db.delete_record(record_id, user_id=self.user_id)
+            success = self.manager.db.delete_record(record_id, user_id=self.user_id, bot_id=self.bot_id)
             
             if success:
                 session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
@@ -602,7 +609,8 @@ class EmployeeService:
         try:
             stats = self.manager.db.get_statistics(
                 filters={"record_type": "员工"},
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             by_table = stats.get('by_table', {})
             
@@ -639,7 +647,8 @@ class EmployeeService:
             }
             records = self.manager.db.query_records(
                 filters=filters,
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -786,7 +795,8 @@ class EmployeeService:
                 filters=filters,
                 limit=100,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -839,7 +849,8 @@ class EmployeeService:
                 filters=filters,
                 limit=200,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -889,7 +900,8 @@ class EmployeeService:
                 filters=filters,
                 limit=500,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:

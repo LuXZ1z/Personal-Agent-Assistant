@@ -1,63 +1,88 @@
 """
 配置管理模块
-使用pydantic-settings管理环境变量配置
+从 system.yaml 文件读取配置，统一管理所有配置项
 """
-import os
+import yaml
 from pathlib import Path
 from typing import Optional
 
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from dotenv import load_dotenv
 
-# 加载.env文件
-env_path = Path(__file__).parent.parent / ".env"
-if env_path.exists():
-    load_dotenv(env_path)
+def load_config_from_yaml(config_path: Optional[Path] = None) -> dict:
+    """
+    从 YAML 文件加载配置
+    
+    Args:
+        config_path: 配置文件路径，如果为 None 则使用默认路径
+        
+    Returns:
+        配置字典
+    """
+    if config_path is None:
+        config_path = Path(__file__).parent.parent / "config" / "system.yaml"
+    
+    if not config_path.exists():
+        raise FileNotFoundError(f"配置文件不存在: {config_path}")
+    
+    with open(config_path, 'r', encoding='utf-8') as f:
+        config = yaml.safe_load(f)
+    
+    return config or {}
 
 
-class Settings(BaseSettings):
-    """应用配置类"""
+class Settings:
+    """应用配置类 - 从 YAML 文件读取配置"""
     
-    model_config = SettingsConfigDict(
-        env_file=".env",
-        env_file_encoding="utf-8",
-        case_sensitive=False,
-        extra="ignore"
-    )
-    
-    # 微信配置
-    wechat_token: str = ""
-    wechat_encoding_aes_key: str = ""
-    wechat_corp_id: str = ""
-    wechat_corp_secret: str = ""
-    wechat_agent_id: int = 0
-    
-    # OpenAI配置
-    openai_api_key: str = ""
-    openai_base_url: str = "https://api.openai.com/v1"
-    
-    # Redis配置
-    redis_url: str = "redis://localhost:6379/0"
-    
-    # 数据库配置
-    database_path: str = "./data/assistant.db"
-    user_database_dir: str = "./data/users"  # 用户数据库目录
-    
-    # 机器人配置
-    bot_config_path: str = "./config/bots.yaml"  # 机器人配置文件路径
-    
-    # 日志配置
-    log_level: str = "INFO"
-    log_file: Optional[str] = None
-    
-    # 服务器配置
-    server_host: str = "0.0.0.0"
-    server_port: int = 80
-    server_workers: int = 1  # 生产环境建议设置为CPU核心数
-    
-    def __init__(self, **kwargs):
-        """初始化配置，确保目录存在"""
-        super().__init__(**kwargs)
+    def __init__(self, config_path: Optional[Path] = None):
+        """
+        初始化配置
+        
+        Args:
+            config_path: 配置文件路径，如果为 None 则使用默认路径
+        """
+        # 加载 YAML 配置
+        config = load_config_from_yaml(config_path)
+        
+        # OpenAI配置
+        openai_config = config.get("openai", {})
+        self.openai_api_key: str = openai_config.get("api_key", "")
+        self.openai_base_url: str = openai_config.get("base_url", "https://api.openai.com/v1")
+        
+        # Redis配置
+        redis_config = config.get("redis", {})
+        self.redis_url: str = redis_config.get("url", "redis://localhost:6379/0")
+        
+        # 数据库配置
+        database_config = config.get("database", {})
+        self.database_path: str = database_config.get("path", "./data/assistant.db")
+        self.user_database_dir: str = database_config.get("user_database_dir", "./data/users")
+        
+        # 日志配置
+        log_config = config.get("log", {})
+        self.log_level: str = log_config.get("level", "INFO")
+        self.log_file: Optional[str] = log_config.get("file")
+        
+        # 服务器配置
+        server_config = config.get("server", {})
+        self.server_host: str = server_config.get("host", "0.0.0.0")
+        self.server_port: int = server_config.get("port", 80)
+        self.server_workers: int = server_config.get("workers", 1)
+        
+        # 微信配置（已移除，实际使用时会从 bots.yaml 中读取各机器人的配置）
+        self.wechat_token: str = ""
+        self.wechat_encoding_aes_key: str = ""
+        self.wechat_corp_id: str = ""
+        self.wechat_corp_secret: str = ""
+        self.wechat_agent_id: int = 0
+        
+        # 机器人配置路径（处理相对路径，转换为绝对路径）
+        bot_config_path = config.get("bot_config_path", "./config/bots.yaml")
+        if not Path(bot_config_path).is_absolute():
+            # 如果是相对路径，基于项目根目录解析
+            project_root = Path(__file__).parent.parent
+            self.bot_config_path: str = str((project_root / bot_config_path).resolve())
+        else:
+            self.bot_config_path: str = bot_config_path
+        
         # 确保数据库目录存在
         db_path = Path(self.database_path)
         if db_path.parent:
@@ -71,10 +96,7 @@ class Settings(BaseSettings):
     
     def validate(self) -> None:
         """验证必需的配置项"""
-        if not self.wechat_token:
-            raise ValueError("WECHAT_TOKEN is required")
-        if not self.wechat_encoding_aes_key:
-            raise ValueError("WECHAT_ENCODING_AES_KEY is required")
+        # 注意：微信配置已从 system.yaml 移除，实际使用时会从 bots.yaml 中读取各机器人的配置
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY is required")
 

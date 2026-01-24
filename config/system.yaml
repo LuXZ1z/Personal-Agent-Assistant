@@ -1,0 +1,30 @@
+# 应用配置文件
+# 统一管理所有配置项，替代 .env 文件
+
+# OpenAI配置
+openai:
+  api_key: "sk-d53aaf4a9a1e40beb7a0084d09a2a57d"
+  base_url: "https://api.deepseek.com/v1"
+
+# Redis配置
+redis:
+  url: "redis://localhost:6379/0"
+
+# 数据库配置
+database:
+  path: "./data/assistant.db"
+  user_database_dir: "./data/users"  # 用户数据库目录
+
+# 日志配置
+log:
+  level: "INFO"
+  file: "./logs/assistant.log"
+
+# 服务器配置
+server:
+  host: "0.0.0.0"
+  port: 8024
+  workers: 1
+
+# 机器人配置路径
+bot_config_path: "./config/bots.yaml"

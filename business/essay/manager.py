@@ -23,17 +23,26 @@ logger = setup_logger(__name__)
 class EssayManager:
     """随笔管理器 - 使用 core 基础功能"""
     
-    def __init__(self, user_id: Optional[str] = None, debug: bool = False):
+    def __init__(self, user_id: Optional[str] = None, bot_id: Optional[str] = None, debug: bool = False):
         """
         初始化随笔管理器
         
         Args:
             user_id: 用户ID，如果为None则使用单数据库模式
+            bot_id: 机器人ID，如果提供则使用 bot_id_user_id 格式的数据库路径
             debug: 是否为调试模式
         """
         self.user_id = user_id
+        self.bot_id = bot_id
         self.debug = debug
-        self.db = get_database_manager(user_id)
+        self.db = get_database_manager(user_id, bot_id)
+        # 确保数据库被创建（通过获取会话来触发数据库创建）
+        if user_id:
+            try:
+                _ = self.db.get_session(user_id=user_id, bot_id=bot_id)
+                logger.info(f"随笔管理器初始化成功: user_id={user_id}, bot_id={bot_id}")
+            except Exception as e:
+                logger.error(f"初始化数据库失败: {e}", exc_info=True)
         self.llm_client = LLMClient()
         self.table_name = "随笔"  # 默认表名
     
@@ -97,7 +106,8 @@ class EssayManager:
                     record_type=structured_data.get('type', '随笔'),
                     table_name=self.table_name,
                     metadata=None,
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
                 print(f"\n✓ 保存成功！记录ID: {record.id}")
                 
@@ -152,7 +162,8 @@ class EssayManager:
                 self.db.update_record(
                     record_id=record.id,
                     metadata={'ai_analysis': analysis_text, 'analysis_date': datetime.now().isoformat()},
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
                 print("\n✓ 分析结果已保存")
         
@@ -188,7 +199,8 @@ class EssayManager:
                     filters=filters,
                     limit=50,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             elif choice == "2":
                 date_str = input("请输入日期 (YYYY-MM-DD): ").strip()
@@ -197,7 +209,8 @@ class EssayManager:
                 records = self.db.query_records(
                     filters=filters,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             elif choice == "3":
                 start_date_str = input("请输入开始日期 (YYYY-MM-DD): ").strip()
@@ -207,7 +220,8 @@ class EssayManager:
                 records = self.db.query_records(
                     filters=filters,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             elif choice == "5":
                 keyword = input("请输入关键词: ").strip()
@@ -215,7 +229,8 @@ class EssayManager:
                 records = self.db.query_records(
                     filters=filters,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             else:
                 return

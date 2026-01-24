@@ -24,17 +24,26 @@ logger = setup_logger(__name__)
 class AccountingManager:
     """记账管理器 - 使用 core 基础功能"""
     
-    def __init__(self, user_id: Optional[str] = None, debug: bool = False):
+    def __init__(self, user_id: Optional[str] = None, bot_id: Optional[str] = None, debug: bool = False):
         """
         初始化记账管理器
         
         Args:
             user_id: 用户ID，如果为None则使用单数据库模式
+            bot_id: 机器人ID，如果提供则使用 bot_id_user_id 格式的数据库路径
             debug: 是否为调试模式
         """
         self.user_id = user_id
+        self.bot_id = bot_id
         self.debug = debug
-        self.db = get_database_manager(user_id)
+        self.db = get_database_manager(user_id, bot_id)
+        # 确保数据库被创建（通过获取会话来触发数据库创建）
+        if user_id:
+            try:
+                _ = self.db.get_session(user_id=user_id, bot_id=bot_id)
+                logger.info(f"记账管理器初始化成功: user_id={user_id}, bot_id={bot_id}")
+            except Exception as e:
+                logger.error(f"初始化数据库失败: {e}", exc_info=True)
         self.llm_client = LLMClient()
         self.table_name = "记账"  # 默认表名
     
@@ -104,7 +113,8 @@ class AccountingManager:
                     record_type=structured_data.get('type', '记账'),
                     table_name=self.table_name,
                     metadata=None,
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
                 print(f"\n✓ 保存成功！记录ID: {record.id}")
             else:
@@ -143,7 +153,8 @@ class AccountingManager:
                     filters=filters,
                     limit=50,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             
             elif choice == "2":
@@ -155,7 +166,8 @@ class AccountingManager:
                     records = self.db.query_records(
                         filters=filters,
                         order_by="-created_at",
-                        user_id=self.user_id
+                        user_id=self.user_id,
+                        bot_id=self.bot_id
                     )
                 except ValueError:
                     print("日期格式错误")
@@ -171,7 +183,8 @@ class AccountingManager:
                     records = self.db.query_records(
                         filters=filters,
                         order_by="-created_at",
-                        user_id=self.user_id
+                        user_id=self.user_id,
+                        bot_id=self.bot_id
                     )
                 except ValueError:
                     print("日期格式错误，请使用 YYYY-MM-DD 格式")
@@ -182,7 +195,8 @@ class AccountingManager:
                 category = input("请输入类别: ").strip()
                 all_records = self.db.query_records(
                     filters=filters,
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
                 records = []
                 for r in all_records:
@@ -198,7 +212,8 @@ class AccountingManager:
                     max_val = float(max_amount) if max_amount else float('inf')
                     all_records = self.db.query_records(
                         filters=filters,
-                        user_id=self.user_id
+                        user_id=self.user_id,
+                        bot_id=self.bot_id
                     )
                     records = []
                     for r in all_records:
@@ -217,7 +232,8 @@ class AccountingManager:
                 records = self.db.query_records(
                     filters=filters,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             
             else:
@@ -294,7 +310,8 @@ class AccountingManager:
                     filters=filters,
                     limit=100,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             
             elif choice == "2":
@@ -305,7 +322,8 @@ class AccountingManager:
                     records = self.db.query_records(
                         filters=filters,
                         order_by="-created_at",
-                        user_id=self.user_id
+                        user_id=self.user_id,
+                        bot_id=self.bot_id
                     )
                 except ValueError:
                     print("日期格式错误")
@@ -320,7 +338,8 @@ class AccountingManager:
                     records = self.db.query_records(
                         filters=filters,
                         order_by="-created_at",
-                        user_id=self.user_id
+                        user_id=self.user_id,
+                        bot_id=self.bot_id
                     )
                 except ValueError:
                     print("日期格式错误，请使用 YYYY-MM-DD 格式")
@@ -330,7 +349,8 @@ class AccountingManager:
                 category = input("请输入类别: ").strip()
                 all_records = self.db.query_records(
                     filters=filters,
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
                 records = [r for r in all_records if r.structured_data.get('fields', {}).get('category') == category]
             
@@ -342,7 +362,8 @@ class AccountingManager:
                     max_val = float(max_amount) if max_amount else float('inf')
                     all_records = self.db.query_records(
                         filters=filters,
-                        user_id=self.user_id
+                        user_id=self.user_id,
+                        bot_id=self.bot_id
                     )
                     records = []
                     for r in all_records:
@@ -360,7 +381,8 @@ class AccountingManager:
                 records = self.db.query_records(
                     filters=filters,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             
             else:
@@ -452,7 +474,8 @@ class AccountingManager:
                 records = self.db.query_records(
                     filters=filters,
                     order_by="-created_at",
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
             
             elif choice == "2":
@@ -464,7 +487,8 @@ class AccountingManager:
                     records = self.db.query_records(
                         filters=filters,
                         order_by="-created_at",
-                        user_id=self.user_id
+                        user_id=self.user_id,
+                        bot_id=self.bot_id
                     )
                 except ValueError:
                     print("日期格式错误，请使用 YYYY-MM-DD 格式")
@@ -474,7 +498,8 @@ class AccountingManager:
                 category = input("请输入类别: ").strip()
                 all_records = self.db.query_records(
                     filters=filters,
-                    user_id=self.user_id
+                    user_id=self.user_id,
+                    bot_id=self.bot_id
                 )
                 records = [r for r in all_records if r.structured_data.get('fields', {}).get('category') == category]
             

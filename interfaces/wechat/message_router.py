@@ -83,7 +83,10 @@ class MessageRouter:
             if task and task.status == "processing":
                 task_manager.cancel_task(bot_id, user_id)
             session_manager.reset_to_menu(bot_id, user_id)
-            return self.menu_handler.show_menu(user_id, allowed_features=allowed_features)
+            menu_result = self.menu_handler.show_menu(user_id, allowed_features=allowed_features)
+            # 添加allowed_features到结果中
+            menu_result["allowed_features"] = allowed_features
+            return menu_result
         
         # 2. 如果在菜单状态，检查是否为业务选择
         if business_type == "menu":
@@ -121,15 +124,23 @@ class MessageRouter:
                         sub_menu_result = service.process_message("", session.context)
                         # 合并消息
                         enter_message += sub_menu_result.get("message", "")
+                        # 获取当前会话的表名
+                        current_session = session_manager.get_session(bot_id, user_id)
+                        table_name = getattr(current_session, 'table_name', None)
                         return {
                             "type": sub_menu_result.get("type", "sub_menu"),
-                            "message": enter_message
+                            "message": enter_message,
+                            "business_type": result["business_type"],
+                            "table_name": table_name
                         }
                 return result
             else:
                 # 在菜单状态但输入不是数字，显示菜单
                 logger.info(f"用户在菜单状态但输入了非数字内容，显示菜单")
-                return self.menu_handler.show_menu(user_id, allowed_features=allowed_features)
+                menu_result = self.menu_handler.show_menu(user_id, allowed_features=allowed_features)
+                # 添加allowed_features到结果中
+                menu_result["allowed_features"] = allowed_features
+                return menu_result
         
         # 3. 路由到对应的业务服务
         try:
@@ -142,6 +153,18 @@ class MessageRouter:
             
             # 处理业务消息
             result = service.process_message(content, session.context)
+            
+            # 如果业务服务返回主菜单（从子菜单返回），直接返回，不检查"0"退出逻辑
+            if result.get("type") == "menu":
+                # 确保包含allowed_features
+                if allowed_features is not None:
+                    result["allowed_features"] = allowed_features
+                return result
+            
+            # 如果是子菜单，确保包含business_type和table_name（用于调试，实际不再使用模板卡片）
+            if result.get("type") == "sub_menu":
+                result["business_type"] = business_type
+                result["table_name"] = getattr(session, 'table_name', None)
             return result
             
         except Exception as e:
@@ -218,8 +241,8 @@ class MessageRouter:
         from core.database import get_database_manager
         
         try:
-            db = get_database_manager(user_id=user_id)
-            stats = db.get_statistics(user_id=user_id)
+            db = get_database_manager(user_id=user_id, bot_id=bot_id)
+            stats = db.get_statistics(user_id=user_id, bot_id=bot_id)
             
             message = "📊 系统状态\n\n"
             message += "✅ 数据库连接: 正常\n\n"

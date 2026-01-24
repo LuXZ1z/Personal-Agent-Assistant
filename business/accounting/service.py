@@ -32,7 +32,7 @@ class AccountingService:
         self.user_id = user_id
         self.bot_id = bot_id
         # 使用 Manager 层，Manager 使用 core 的基础能力
-        self.manager = AccountingManager(user_id=user_id, debug=False)
+        self.manager = AccountingManager(user_id=user_id, bot_id=bot_id, debug=False)
     
     def show_sub_menu(self) -> Dict[str, Any]:
         """显示记账管理子菜单"""
@@ -76,9 +76,12 @@ class AccountingService:
         session = session_manager.get_session(self.bot_id, self.user_id)
         sub_menu = session.sub_menu
         
+        logger.debug(f"处理记账消息: bot_id={self.bot_id}, user_id={self.user_id}, sub_menu={sub_menu}, content={content[:50]}")
+        
         # 如果没有子菜单状态，显示子菜单
         if sub_menu is None:
             session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
+            logger.debug(f"子菜单状态为None，设置为main并显示子菜单")
             return self.show_sub_menu()
         
         # 处理子菜单选择
@@ -90,7 +93,10 @@ class AccountingService:
                     "type": "error",
                     "message": f"❌ 无效输入：{content}\n\n请输入数字选择（0-8），或发送\"0\"返回主菜单"
                 }
-            return self._handle_sub_menu_choice(content)
+            logger.debug(f"处理子菜单选择: choice={choice}")
+            result = self._handle_sub_menu_choice(content)
+            logger.debug(f"子菜单选择处理结果: type={result.get('type')}, sub_menu状态={session_manager.get_session(self.bot_id, self.user_id).sub_menu}")
+            return result
         elif sub_menu == "add":
             return self._handle_add(content)
         elif sub_menu == "query":
@@ -131,6 +137,9 @@ class AccountingService:
                 return MenuHandler.show_menu()
         elif choice == "1":
             session_manager.set_sub_menu(self.bot_id, self.user_id, "add")
+            # 验证状态是否设置成功
+            session = session_manager.get_session(self.bot_id, self.user_id)
+            logger.info(f"设置子菜单为add: bot_id={self.bot_id}, user_id={self.user_id}, 当前sub_menu={session.sub_menu}")
             return {
                 "type": "prompt",
                 "message": "✓ 已进入添加记账模式\n\n请直接发送记账信息（自然语言），例如：\n- 今天花了50元买了一杯咖啡\n- 在超市购物花费200元\n\n发送\"0\"可返回子菜单"
@@ -201,7 +210,8 @@ class AccountingService:
                 record_type=structured_data.get('type', '记账'),
                 table_name=self.manager.table_name,
                 metadata=None,
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             # 构建成功消息
@@ -316,7 +326,8 @@ class AccountingService:
                 filters=filters,
                 limit=20,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -489,7 +500,7 @@ class AccountingService:
         
         try:
             record_id = int(content.strip())
-            success = self.manager.db.delete_record(record_id, user_id=self.user_id)
+            success = self.manager.db.delete_record(record_id, user_id=self.user_id, bot_id=self.bot_id)
             
             if success:
                 session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
@@ -543,7 +554,8 @@ class AccountingService:
         try:
             stats = self.manager.db.get_statistics(
                 filters={"record_type": "记账"},
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             by_table = stats.get('by_table', {})
             
@@ -651,7 +663,8 @@ class AccountingService:
                 filters=filters,
                 limit=100,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -704,7 +717,8 @@ class AccountingService:
                 filters=filters,
                 limit=200,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -759,7 +773,8 @@ class AccountingService:
                 filters=filters,
                 limit=500,
                 order_by="-created_at",
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:
@@ -956,7 +971,8 @@ class AccountingService:
             }
             records = self.manager.db.query_records(
                 filters=filters,
-                user_id=self.user_id
+                user_id=self.user_id,
+                bot_id=self.bot_id
             )
             
             if not records:

@@ -2,7 +2,7 @@
 
 ## 目的
 
-这是一个**最简单的测试程序**，用于验证：
+`minimal_test_server.py` 是一个**最简单的测试程序**，用于验证：
 1. ✅ 能否正确加载 yaml 配置
 2. ✅ 能否接收微信消息
 3. ✅ 能否发送回复消息
@@ -10,25 +10,37 @@
 
 ## 特点
 
-- **极简代码**：只有约200行代码
+- **极简代码**：约240行代码
+- **支持多机器人**：从 `config/bots.yaml` 加载配置
 - **无复杂业务逻辑**：收到什么就回复什么
 - **后台异步处理**：立即返回响应，不会超时
 - **详细日志**：每一步都有日志输出
 
+## 前置要求
+
+1. 已配置 `config/bots.yaml` 文件（至少一个机器人）
+2. 企业微信应用已创建并获取了所有必要参数
+
 ## 启动方法
-
-### 方法1：使用脚本（推荐）
-
-```bash
-cd /home/Personal-Agent-Assistant
-./test_minimal.sh
-```
-
-### 方法2：直接运行
 
 ```bash
 cd /home/Personal-Agent-Assistant
 python minimal_test_server.py
+```
+
+启动后会显示：
+```
+============================================================
+最小化测试服务器
+============================================================
+已加载 2 个机器人: ['test', 'family']
+端口: 8024
+============================================================
+
+✓ 加载机器人: test - 测试机器人 (receive_id='ww0b4c690c4b9e8ab1')
+✓ 加载机器人: family - 家庭机器人 (receive_id='ww6f04ea15ec4caa93')
+INFO:     Started server process [xxxxx]
+INFO:     Uvicorn running on http://0.0.0.0:8024
 ```
 
 ## 测试步骤
@@ -107,28 +119,47 @@ INFO:     Uvicorn running on http://0.0.0.0:8024
 
 ## 代码结构
 
+### 核心流程
+
 ```python
 # 1. 加载 yaml 配置
-with open('config/bots.yaml', 'r') as f:
-    BOTS_CONFIG = yaml.safe_load(f)['bots']
+with open('/home/Personal-Agent-Assistant/config/bots.yaml', 'r') as f:
+    config = yaml.safe_load(f)
+    BOTS_CONFIG = config['bots']
 
-# 2. 为每个机器人创建加解密器
-CRYPTS[bot_id] = WeChatMessageCrypt(...)
+# 2. 为每个机器人创建加解密器（使用 corp_id 作为 receive_id）
+for bot_id, bot_config in BOTS_CONFIG.items():
+    receive_id = bot_config['wechat_corp_id']
+    CRYPTS[bot_id] = WeChatMessageCrypt(
+        token=bot_config['wechat_token'],
+        encoding_aes_key=bot_config['wechat_encoding_aes_key'],
+        receive_id=receive_id
+    )
 
-# 3. 接收消息
+# 3. URL验证（GET请求）
+@app.get("/ai-bot/callback/{botid}")
+async def verify_url(...):
+    decrypted = wxcpt.verify_url(msg_signature, timestamp, nonce, echostr)
+    return PlainTextResponse(content=decrypted)
+
+# 4. 接收消息（POST请求）
 @app.post("/ai-bot/callback/{botid}")
 async def handle_message(...):
     # 解密消息
-    # 解析内容
+    decrypted_msg = wxcpt.decrypt_msg(post_data, msg_signature, timestamp, nonce)
+    # 解析XML
+    xml_tree = ET.fromstring(decrypted_msg)
     # 【关键】立即启动后台任务
-    asyncio.create_task(process_and_reply(...))
+    asyncio.create_task(process_and_reply(botid, user_id, content))
     # 马上返回 success（不等待处理完成）
-    return PlainTextResponse("success")
+    return PlainTextResponse(content="success")
 
-# 4. 后台处理
-async def process_and_reply(...):
+# 5. 后台处理并回复
+async def process_and_reply(bot_id, user_id, content):
     # 构造回复
-    # 发送消息
+    reply = f"✅ {bot_name}收到消息\n\n你发送的内容：{content}\n\n时间：{datetime.now().strftime('%H:%M:%S')}"
+    # 在线程池中发送（避免阻塞）
+    success = await asyncio.to_thread(send_message, bot_id, user_id, reply)
 ```
 
 ## 关键点

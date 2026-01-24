@@ -35,9 +35,11 @@ class DatabaseManager:
         db_file = Path(db_path)
         if db_file.parent:
             db_file.parent.mkdir(parents=True, exist_ok=True)
+            logger.debug(f"数据库目录已确保存在: {db_file.parent}")
         
         # 创建SQLite引擎
         database_url = f"sqlite:///{db_path}"
+        logger.debug(f"创建数据库引擎: {database_url}")
         self.engine = create_engine(
             database_url,
             poolclass=StaticPool,
@@ -53,9 +55,14 @@ class DatabaseManager:
         )
         
         # 创建表
+        logger.debug(f"开始创建数据库表: {db_path}")
         self.create_tables()
         
-        logger.info(f"数据库管理器初始化成功: {db_path}")
+        # 验证文件是否真的创建了
+        if db_file.exists():
+            logger.info(f"数据库管理器初始化成功: {db_path} (文件已存在)")
+        else:
+            logger.warning(f"数据库管理器初始化完成，但文件不存在: {db_path} (SQLite可能延迟创建)")
     
     def create_tables(self):
         """创建数据库表"""

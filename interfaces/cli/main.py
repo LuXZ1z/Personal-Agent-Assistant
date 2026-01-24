@@ -209,16 +209,19 @@ class CLIServer:
             logger.error(f"CLI服务端Redis连接失败: {e}")
             raise
     
-    def _restore_session(self, session_dict: dict):
+    def _restore_session(self, request: BusinessRequest):
         """
         恢复会话状态
         
         Args:
-            session_dict: 会话状态字典
+            request: 业务请求（包含bot_id, user_id和session）
         """
-        bot_id = session_dict.get("bot_id")
-        user_id = session_dict.get("user_id")
+        bot_id = request.bot_id
+        user_id = request.user_id
+        session_dict = request.session or {}
+        
         if not bot_id or not user_id:
+            logger.warning(f"恢复会话状态失败: bot_id或user_id为空")
             return
         
         # 获取或创建会话
@@ -229,8 +232,9 @@ class CLIServer:
         session.sub_menu = session_dict.get("sub_menu")
         session.table_name = session_dict.get("table_name")
         session.context = session_dict.get("context", {})
+        session.update_activity()
         
-        logger.debug(f"恢复会话状态: bot_id={bot_id}, user_id={user_id}, business_type={session.business_type}")
+        logger.debug(f"恢复会话状态: bot_id={bot_id}, user_id={user_id}, business_type={session.business_type}, sub_menu={session.sub_menu}")
     
     def _process_message(self, request: BusinessRequest) -> BusinessResponse:
         """
@@ -246,7 +250,7 @@ class CLIServer:
             logger.info(f"[CLI服务端] 处理消息: request_id={request.request_id}, bot_id={request.bot_id}, user_id={request.user_id}, content={request.content[:50]}")
             
             # 恢复会话状态
-            self._restore_session(request.session)
+            self._restore_session(request)
             
             # 调用消息路由器处理消息
             result = message_router.route_message(

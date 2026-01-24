@@ -193,6 +193,73 @@ def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
     return all_success
 
 
+def send_template_card_message(
+    bot_id: str, 
+    user_id: str, 
+    card_data: dict
+) -> bool:
+    """
+    发送模板卡片消息到企业微信
+    
+    Args:
+        bot_id: 机器人ID
+        user_id: 用户 ID
+        card_data: 模板卡片数据字典
+        
+    Returns:
+        是否发送成功
+    """
+    # 获取 access_token 和 agent_id
+    access_token = get_access_token(bot_id)
+    if not access_token:
+        logger.error(f"[发送卡片] ✗ 无法获取机器人 {bot_id} access_token，卡片发送失败")
+        return False
+    
+    try:
+        bot_config = bot_manager.get_bot_config(bot_id)
+        agent_id = bot_config['wechat_agent_id']
+    except ValueError as e:
+        logger.error(f"[发送卡片] ✗ 获取机器人配置失败: {e}")
+        return False
+    
+    try:
+        url = f'https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token={access_token}'
+        
+        # 构建消息体
+        data = {
+            "touser": user_id,
+            "msgtype": "template_card",
+            "agentid": agent_id,
+            "template_card": card_data,
+            "enable_id_trans": 0,
+            "enable_duplicate_check": 0,
+        }
+        
+        logger.info(f"[发送卡片] 发送模板卡片: bot_id={bot_id}, user_id={user_id}, card_type={card_data.get('card_type')}")
+        
+        response = requests.post(url, json=data, timeout=10)
+        response.raise_for_status()
+        
+        result = response.json()
+        
+        if result.get('errcode') == 0:
+            logger.info(f"[发送卡片] ✓ 模板卡片发送成功")
+            return True
+        else:
+            logger.error(f"[发送卡片] ✗ 模板卡片发送失败: errmsg={result.get('errmsg')}, errcode={result.get('errcode')}")
+            return False
+            
+    except requests.exceptions.Timeout as e:
+        logger.error(f"[发送卡片] ✗ 请求超时: {e}")
+        return False
+    except requests.exceptions.RequestException as e:
+        logger.error(f"[发送卡片] ✗ 请求异常: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"[发送卡片] ✗ 发送异常: {e}", exc_info=True)
+        return False
+
+
 @app.get("/ai-bot/callback/{botid}")
 async def verify_url(
     request: Request,
@@ -551,12 +618,26 @@ async def background_business_response_processor():
                     user_id = result.get("user_id")
                     response_type = result.get("type")
                     response_message = result.get("message", "")
+                    updated_session = result.get("session")  # 获取更新后的会话状态
                     
                     if not bot_id or not user_id:
                         logger.warning(f"[业务响应] 响应缺少bot_id或user_id，跳过: request_id={response.request_id}")
                         continue
                     
-                    # 处理响应消息
+                    # 同步更新会话状态（重要！）
+                    if updated_session:
+                        try:
+                            session = session_manager.get_session(bot_id, user_id)
+                            session.business_type = updated_session.get("business_type", session.business_type)
+                            session.sub_menu = updated_session.get("sub_menu")
+                            session.table_name = updated_session.get("table_name")
+                            session.context = updated_session.get("context", {})
+                            session.update_activity()
+                            logger.debug(f"[业务响应] 会话状态已同步: bot_id={bot_id}, user_id={user_id}, business_type={session.business_type}, sub_menu={session.sub_menu}")
+                        except Exception as e:
+                            logger.error(f"[业务响应] 同步会话状态失败: {e}", exc_info=True)
+                    
+                    # 所有消息类型都使用文本消息
                     if response_type == "error":
                         final_message = f"❌ {response_message}"
                     elif response_type == "processing":
@@ -565,8 +646,8 @@ async def background_business_response_processor():
                     else:
                         final_message = response_message
                     
-                    # 发送消息回微信
-                    logger.info(f"[业务响应] 发送响应消息到用户: bot_id={bot_id}, user_id={user_id}, type={response_type}")
+                    # 发送文本消息
+                    logger.info(f"[业务响应] 发送文本消息: bot_id={bot_id}, user_id={user_id}, type={response_type}")
                     success = await asyncio.to_thread(send_text_message, bot_id, user_id, final_message)
                     
                     if success:

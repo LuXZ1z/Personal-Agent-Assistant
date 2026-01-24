@@ -20,12 +20,13 @@ _database_manager: Optional[DatabaseManager] = None
 _user_database_manager: Optional[UserDatabaseManager] = None
 
 
-def get_database_manager(user_id: Optional[str] = None) -> DatabaseManager:
+def get_database_manager(user_id: Optional[str] = None, bot_id: Optional[str] = None) -> DatabaseManager:
     """
     获取数据库管理器实例
     
     Args:
         user_id: 用户ID，如果提供则使用用户数据库，否则使用全局数据库
+        bot_id: 机器人ID，如果提供则使用 bot_id_user_id 格式的数据库路径
         
     Returns:
         数据库管理器实例
@@ -35,6 +36,9 @@ def get_database_manager(user_id: Optional[str] = None) -> DatabaseManager:
     if user_id:
         if _user_database_manager is None:
             _user_database_manager = UserDatabaseManager()
+        # 将 bot_id 存储到管理器实例中，以便后续使用
+        if bot_id:
+            _user_database_manager._current_bot_id = bot_id
         return _user_database_manager
     else:
         if _database_manager is None:

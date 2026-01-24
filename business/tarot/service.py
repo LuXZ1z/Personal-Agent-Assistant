@@ -29,7 +29,7 @@ class TarotService:
         self.user_id = user_id
         self.bot_id = bot_id
         # 使用 Manager 层，Manager 使用 core 的基础能力
-        self.manager = TarotManager(user_id=user_id, debug=False)
+        self.manager = TarotManager(user_id=user_id, bot_id=bot_id, debug=False)
         # Manager 已经初始化了这些，直接使用
         self.tarot_service = self.manager.tarot_service
         self.llm_client = self.manager.llm_client

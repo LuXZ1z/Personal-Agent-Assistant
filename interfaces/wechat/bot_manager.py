@@ -41,33 +41,74 @@ class BotManager:
         self._lock = threading.RLock()
         
         # 加载配置
-        self._load_config()
-        
-        logger.info(f"机器人管理器初始化成功，加载了 {len(self._bots)} 个机器人")
+        try:
+            self._load_config()
+            logger.info(f"机器人管理器初始化成功，加载了 {len(self._bots)} 个机器人")
+            if len(self._bots) == 0:
+                logger.warning("⚠ 警告: 没有加载到任何机器人配置，请检查 config/bots.yaml 文件")
+        except Exception as e:
+            logger.error(f"机器人管理器初始化失败: {e}", exc_info=True)
+            raise
     
     def _load_config(self):
         """加载机器人配置"""
+        # 使用 settings.bot_config_path（已经是绝对路径）
+        # 如果 settings.bot_config_path 是字符串，转换为 Path
         config_path = Path(settings.bot_config_path)
         
+        # 如果仍然是相对路径（虽然不应该），基于项目根目录解析
+        if not config_path.is_absolute():
+            project_root = Path(__file__).parent.parent.parent
+            config_path = (project_root / config_path).resolve()
+        
+        logger.info(f"加载机器人配置文件: {config_path}")
+        
         if not config_path.exists():
-            logger.warning(f"机器人配置文件不存在: {config_path}，使用空配置")
+            logger.error(f"机器人配置文件不存在: {config_path}，使用空配置")
+            logger.error(f"请检查配置文件路径是否正确")
             return
         
         try:
+            # 使用与 minimal_test_server.py 完全相同的加载方式
             with open(config_path, 'r', encoding='utf-8') as f:
                 config_data = yaml.safe_load(f)
             
+            if not config_data:
+                logger.error(f"配置文件为空或格式错误: {config_path}")
+                return
+            
             bots_config = config_data.get('bots', {})
+            if not bots_config:
+                logger.warning(f"配置文件中没有找到 'bots' 配置项: {config_path}")
+                return
+            
+            logger.info(f"从配置文件读取到 {len(bots_config)} 个机器人配置")
             
             with self._lock:
                 self._bots = {}
                 for bot_id, bot_config in bots_config.items():
                     if bot_config.get('enabled', True):
+                        # 确保所有必需的字段都存在
+                        required_fields = ['wechat_token', 'wechat_encoding_aes_key', 'wechat_corp_id']
+                        missing_fields = [f for f in required_fields if f not in bot_config]
+                        if missing_fields:
+                            logger.error(f"机器人 {bot_id} 缺少必需字段: {missing_fields}")
+                            continue
+                        
                         self._bots[bot_id] = bot_config.copy()
-                        logger.info(f"加载机器人: {bot_id} - {bot_config.get('name', '未知')}")
+                        logger.info(f"✓ 加载机器人: {bot_id} - {bot_config.get('name', '未知')} (receive_id='{bot_config.get('wechat_corp_id')}')")
                     else:
                         logger.debug(f"跳过禁用的机器人: {bot_id}")
+            
+            if len(self._bots) == 0:
+                logger.error("没有加载到任何启用的机器人，请检查配置文件")
                 
+        except FileNotFoundError:
+            logger.error(f"配置文件不存在: {config_path}")
+            raise
+        except yaml.YAMLError as e:
+            logger.error(f"YAML解析失败: {e}")
+            raise
         except Exception as e:
             logger.error(f"加载机器人配置失败: {e}", exc_info=True)
             raise
@@ -134,6 +175,16 @@ class BotManager:
         """
         with self._lock:
             return list(self._bots.keys())
+    
+    def get_all_bots(self) -> Dict[str, Dict]:
+        """
+        获取所有机器人配置（与 minimal_test_server.py 的 BOTS_CONFIG 格式一致）
+        
+        Returns:
+            所有机器人配置字典
+        """
+        with self._lock:
+            return self._bots.copy()
     
     def reload_config(self):
         """重新加载配置文件（支持热重载）"""
