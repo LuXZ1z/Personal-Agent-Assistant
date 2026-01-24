@@ -10,7 +10,7 @@ bots:
     wechat_agent_id: 1000002
     enabled: true
     # 功能列表：此机器人只开放3个功能
-    features: 
+    features:  
       - accounting
       - tarot
     
@@ -29,8 +29,35 @@ bots:
       - employee
       - tarot
     
-  # hr:
-  #   name: "HR机器人"
+  beng1:
+    name: "beng机器人1"
+    wechat_token: "Mf2pt"
+    wechat_encoding_aes_key: "GnJ2C23HEM9OcE1cgNfs3lGfX6lUKYHUViCJ1cm9YBb"
+    wechat_corp_id: "ww7658b850fd15ddc4"
+    wechat_corp_secret: "aiCYfCy8ofzoJy7GMntmnq-HswD5-LFF5eS2GsECSpU"
+    wechat_agent_id: 1000002
+    enabled: true
+    features:
+      - accounting
+      - essay
+      - employee
+      - tarot
+
+  beng2:
+      name: "beng机器人2"
+      wechat_token: "YjXkjGEuW3QIsQLcS7MiM"
+      wechat_encoding_aes_key: "7X0tTromonx2pIA4X6LkilfnaZsq4MQnrONRCRDpqkB"
+      wechat_corp_id: "ww6fd2df7b808a5ae2"
+      wechat_corp_secret: "hFyE5Ghlp79d54CAdZKzptQxUvRnTFibY2RyQiHDhlk"
+      wechat_agent_id: 1000002
+      enabled: true
+      # 功能列表：此机器人只开放员工管理
+      features:
+        - accounting
+        - tarot
+
+  # beng3:
+  #   name: "beng机器人1"
   #   wechat_token: "hr_token_xxx"
   #   wechat_encoding_aes_key: "hr_aes_key_xxx"
   #   wechat_corp_id: "wwzzz"
@@ -39,5 +66,5 @@ bots:
   #   enabled: true
   #   # 功能列表：此机器人只开放员工管理
   #   features:
-  #     - employee
-
+  #     - accounting
+  #     - tarot

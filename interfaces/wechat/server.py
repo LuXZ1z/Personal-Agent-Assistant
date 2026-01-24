@@ -103,14 +103,21 @@ def send_text_message(bot_id: str, user_id: str, content: str) -> bool:
     Returns:
         是否所有消息都发送成功
     """
-    # 美化和分割消息
-    from shared.message_utils import format_message
-    messages = format_message(content, max_chars=750)
+    raw_len = len(content) if content else 0
+
+    # 美化 + 分割消息（分批发送）
+    from shared.message_utils import format_message, split_message
+    content = format_message(content)
+    beautified_len = len(content) if content else 0
+    messages = split_message(content, max_chars=750)
     
     if not messages:
         return True
     
-    logger.info(f"[发送消息] 开始发送: bot_id={bot_id}, user_id={user_id}, 总消息数={len(messages)}, 原始长度={len(content)}")
+    logger.info(
+        f"[发送消息] 开始发送: bot_id={bot_id}, user_id={user_id}, "
+        f"总消息数={len(messages)}, 原始长度={raw_len}, 美化后长度={beautified_len}"
+    )
     
     # 获取 access_token 和 agent_id（所有消息共享）
     access_token = get_access_token(bot_id)
@@ -451,25 +458,31 @@ async def _process_message_async(bot_id: str, user_id: str, content: str, msg_id
         logger.info(f"[后台任务] 步骤1: 获取会话状态...")
         session = session_manager.get_session(bot_id, user_id)
         logger.info(f"[后台任务] ✓ 会话状态: business_type={session.business_type}, sub_menu={session.sub_menu}")
-        needs_llm = False
-        task_type = None
         
-        if session.business_type == "tarot":
-            # 检查是否在占卜状态（不是主菜单）
-            if session.sub_menu in ["single", "three_card", "five_card"]:
-                # 检查内容不是"0"（返回菜单）
-                if content.strip() != "0":
-                    needs_llm = True
-                    task_type = f"tarot_{session.sub_menu}"
-                    logger.info(f"[后台任务] 需要调用LLM: task_type={task_type}")
-        
-        # 如果需要调用LLM，先发送"正在处理"消息
-        if needs_llm:
-            processing_message = f"⏳ 正在调用大模型处理中...\n\n任务类型: {task_type}\n内容: {content[:50]}\n\n请稍候，处理完成后会立即返回结果"
-            logger.info(f"[后台任务] 步骤2: 发送正在处理消息...")
-            # 使用线程池执行同步调用，避免阻塞事件循环
-            await asyncio.to_thread(send_text_message, bot_id, user_id, processing_message)
-            logger.info(f"[后台任务] ✓ 已发送正在处理消息")
+        # 先检查是否有正在处理的任务
+        task = task_manager.get_task(bot_id, user_id)
+        if task and task.status == "processing":
+            logger.info(f"[后台任务] ⚠ 任务正在处理中，跳过发送正在处理消息: task_type={task.task_type}")
+        else:
+            needs_llm = False
+            task_type = None
+            
+            if session.business_type == "tarot":
+                # 检查是否在占卜状态（不是主菜单）
+                if session.sub_menu in ["single", "three_card", "five_card"]:
+                    # 检查内容不是"0"（返回菜单）
+                    if content.strip() != "0":
+                        needs_llm = True
+                        task_type = f"tarot_{session.sub_menu}"
+                        logger.info(f"[后台任务] 需要调用LLM: task_type={task_type}")
+            
+            # 如果需要调用LLM，先发送"正在处理"消息
+            if needs_llm:
+                processing_message = f"⏳ 正在调用大模型处理中...\n\n任务类型: {task_type}\n内容: {content[:50]}\n\n请稍候，处理完成后会立即返回结果"
+                logger.info(f"[后台任务] 步骤2: 发送正在处理消息...")
+                # 使用线程池执行同步调用，避免阻塞事件循环
+                await asyncio.to_thread(send_text_message, bot_id, user_id, processing_message)
+                logger.info(f"[后台任务] ✓ 已发送正在处理消息")
         
         # 使用消息路由器处理消息（会检查任务状态）
         # 在线程池中执行，因为route_message是同步的且可能耗时

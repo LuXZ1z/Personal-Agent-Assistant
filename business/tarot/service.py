@@ -88,9 +88,13 @@ class TarotService:
             session_manager.reset_to_menu(self.bot_id, self.user_id)
             try:
                 from interfaces.wechat.menu_handler import MenuHandler
+                from interfaces.wechat.bot_manager import bot_manager
+                # 获取机器人的功能列表，确保只显示允许的功能
+                allowed_features = bot_manager.get_features(self.bot_id)
+                return MenuHandler.show_menu(self.user_id, allowed_features=allowed_features)
             except ImportError:
                 from interfaces.cli.menu import MenuHandler
-            return MenuHandler.show_menu()
+                return MenuHandler.show_menu()
         elif choice == "1":
             session_manager.set_sub_menu(self.bot_id, self.user_id, "single")
             return {
@@ -123,16 +127,17 @@ class TarotService:
             session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
-        question = content.strip() if content.strip() and content.strip() != "抽牌" else None
-        
         # 检查是否已有任务在处理
         task = task_manager.get_task(self.bot_id, self.user_id)
         if task and task.status == "processing":
+            # 如果任务正在处理中，忽略新的输入（避免重复调用API）
             elapsed = task.get_elapsed_time()
             return {
                 "type": "processing",
-                "message": f"⏳ 正在处理中...\n\n任务类型: {task.task_type}\n已处理时间: {elapsed:.1f}秒\n\n如需取消，请发送\"取消\""
+                "message": f"⏳ 正在处理中，请稍候...\n\n任务类型: {task.task_type}\n已处理时间: {elapsed:.1f}秒\n\n如需取消，请发送\"取消\""
             }
+        
+        question = content.strip() if content.strip() and content.strip() != "抽牌" else None
         
         # 启动任务
         task_manager.start_task(self.bot_id, self.user_id, "tarot_single", question or "单张牌占卜")
@@ -219,15 +224,17 @@ class TarotService:
             session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
-        question = content.strip() if content.strip() and content.strip() != "抽牌" else None
-        
+        # 检查是否已有任务在处理
         task = task_manager.get_task(self.bot_id, self.user_id)
         if task and task.status == "processing":
+            # 如果任务正在处理中，忽略新的输入（避免重复调用API）
             elapsed = task.get_elapsed_time()
             return {
                 "type": "processing",
-                "message": f"⏳ 正在处理中...\n\n已处理时间: {elapsed:.1f}秒"
+                "message": f"⏳ 正在处理中，请稍候...\n\n任务类型: {task.task_type}\n已处理时间: {elapsed:.1f}秒\n\n如需取消，请发送\"取消\""
             }
+        
+        question = content.strip() if content.strip() and content.strip() != "抽牌" else None
         
         task_manager.start_task(self.bot_id, self.user_id, "tarot_three_card", question or "三张牌占卜")
         
@@ -315,15 +322,17 @@ class TarotService:
             session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
             return self.show_sub_menu()
         
-        question = content.strip() if content.strip() and content.strip() != "抽牌" else None
-        
+        # 检查是否已有任务在处理
         task = task_manager.get_task(self.bot_id, self.user_id)
         if task and task.status == "processing":
+            # 如果任务正在处理中，忽略新的输入（避免重复调用API）
             elapsed = task.get_elapsed_time()
             return {
                 "type": "processing",
-                "message": f"⏳ 正在处理中...\n\n已处理时间: {elapsed:.1f}秒"
+                "message": f"⏳ 正在处理中，请稍候...\n\n任务类型: {task.task_type}\n已处理时间: {elapsed:.1f}秒\n\n如需取消，请发送\"取消\""
             }
+        
+        question = content.strip() if content.strip() and content.strip() != "抽牌" else None
         
         task_manager.start_task(self.bot_id, self.user_id, "tarot_five_card", question or "五张牌占卜")
         
@@ -439,7 +448,7 @@ class TarotService:
 
 发送\"0\"返回子菜单"""
         
-        session_manager.set_sub_menu(self.user_id, "main")
+        session_manager.set_sub_menu(self.bot_id, self.user_id, "main")
         return {
             "type": "info",
             "message": knowledge_text

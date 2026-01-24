@@ -83,6 +83,13 @@ class AccountingService:
         
         # 处理子菜单选择
         if sub_menu == "main":
+            # 如果输入不是有效的数字选择（0-8），显示错误提示
+            choice = content.strip()
+            if choice and not choice.isdigit():
+                return {
+                    "type": "error",
+                    "message": f"❌ 无效输入：{content}\n\n请输入数字选择（0-8），或发送\"0\"返回主菜单"
+                }
             return self._handle_sub_menu_choice(content)
         elif sub_menu == "add":
             return self._handle_add(content)
@@ -115,9 +122,13 @@ class AccountingService:
             # 延迟导入避免循环依赖
             try:
                 from interfaces.wechat.menu_handler import MenuHandler
+                from interfaces.wechat.bot_manager import bot_manager
+                # 获取机器人的功能列表，确保只显示允许的功能
+                allowed_features = bot_manager.get_features(self.bot_id)
+                return MenuHandler.show_menu(self.user_id, allowed_features=allowed_features)
             except ImportError:
                 from interfaces.cli.menu import MenuHandler
-            return MenuHandler.show_menu()
+                return MenuHandler.show_menu()
         elif choice == "1":
             session_manager.set_sub_menu(self.bot_id, self.user_id, "add")
             return {

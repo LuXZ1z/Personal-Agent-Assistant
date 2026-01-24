@@ -8,7 +8,7 @@ from typing import List, Optional
 
 def beautify_message(text: str) -> str:
     """
-    美化消息内容，去除markdown格式符号
+    美化消息内容，去除markdown格式符号，转换转义字符
     
     Args:
         text: 原始消息文本
@@ -18,6 +18,31 @@ def beautify_message(text: str) -> str:
     """
     if not text:
         return text
+    
+    # 先处理转义字符（将字符串形式的转义字符转换为实际字符）
+    # 例如：将 "\\n" 转换为实际的换行符
+    # 注意：只处理字符串形式的转义序列，不影响已经存在的实际换行符
+    
+    # 手动处理常见的转义序列（更安全可靠）
+    # 按顺序处理，避免重复替换
+    escape_map = {
+        r"\n": "\n",    # 换行符（两个字符：\ 和 n）
+        r"\t": "\t",    # 制表符
+        r"\r": "\r",    # 回车符
+        r"\"": "\"",    # 双引号
+        r"\'": "'",     # 单引号
+    }
+    
+    # 先处理反斜杠，避免影响其他转义序列的识别
+    # 将真正的反斜杠（连续两个反斜杠）替换为临时标记
+    text = text.replace(r"\\", "\x00DOUBLE_BACKSLASH\x00")
+    
+    # 处理其他转义序列
+    for escaped, actual in escape_map.items():
+        text = text.replace(escaped, actual)
+    
+    # 恢复真正的反斜杠（连续两个反斜杠）
+    text = text.replace("\x00DOUBLE_BACKSLASH\x00", "\\")
     
     # 去除markdown格式符号
     # 去除 **粗体** 符号
@@ -65,89 +90,57 @@ def split_message(text: str, max_chars: int = 750) -> List[str]:
         return [text]
     
     # 需要分割
-    messages = []
-    remaining_text = text
-    
-    # 预留空间用于添加序号（格式：[1/3] 最多占用约10字符）
-    max_content_chars = max_chars - 15
-    
-    # 先计算总部分数
-    total_chars = len(text)
-    total_parts = (total_chars + max_content_chars - 1) // max_content_chars
-    
-    part_num = 0
-    
-    while remaining_text:
-        part_num += 1
-        remaining_chars = len(remaining_text)
-        
-        if remaining_chars <= max_content_chars:
-            # 最后一部分
-            if total_parts > 1:
-                messages.append(f"{remaining_text}\n\n[{part_num}/{total_parts}]")
-            else:
-                messages.append(remaining_text)
+    # 预留空间用于添加序号（格式：[1/3] + 两个换行）。通常 9 字符以内，预留 10 更贴近上限且更不易产生碎片段落。
+    max_content_chars = max_chars - 10
+    if max_content_chars <= 0:
+        max_content_chars = max_chars
+
+    parts: List[str] = []
+    remaining = text
+
+    while remaining:
+        if len(remaining) <= max_content_chars:
+            parts.append(remaining.rstrip())
             break
-        
-        # 需要分割，尝试在换行处分割
-        chunk = ""
-        pos = 0
-        
-        # 按字符遍历，尽量在换行处断开
-        last_newline_pos = -1
-        while pos < len(remaining_text):
-            char = remaining_text[pos]
-            test_chunk = chunk + char
-            test_chars = len(test_chunk)
-            
-            if test_chars > max_content_chars:
-                # 超出限制，使用上次换行位置
-                if last_newline_pos >= 0:
-                    # 在换行处断开
-                    chunk = remaining_text[:last_newline_pos + 1]
-                    remaining_text = remaining_text[last_newline_pos + 1:]
-                else:
-                    # 没有换行，强制在当前字符前断开
-                    chunk = remaining_text[:pos]
-                    remaining_text = remaining_text[pos:]
-                break
-            
-            chunk = test_chunk
-            if char == '\n':
-                last_newline_pos = pos
-            
-            pos += 1
-        
-        # 如果遍历完还没找到分割点，说明剩余部分都在限制内
-        if pos >= len(remaining_text):
-            chunk = remaining_text
-            remaining_text = ""
-        
-        # 添加序号
-        messages.append(f"{chunk.rstrip()}\n\n[{part_num}/{total_parts}]")
-    
+
+        window = remaining[:max_content_chars]
+        cut = window.rfind("\n")
+        # 如果换行位置太靠前，会产生很短的“碎片段落”，体验很差；此时忽略换行改为硬切
+        min_reasonable_cut = max(50, int(max_content_chars * 0.4))
+        if cut < min_reasonable_cut:
+            # 没有合适的换行点，按硬切
+            cut = max_content_chars
+        else:
+            # 在换行符之后切（保留换行语义）
+            cut = cut + 1
+
+        chunk = remaining[:cut]
+        remaining = remaining[cut:]
+        parts.append(chunk.rstrip())
+
+    total_parts = len(parts)
+    if total_parts <= 1:
+        return parts
+
+    messages: List[str] = []
+    for idx, p in enumerate(parts, 1):
+        messages.append(f"{p}\n\n[{idx}/{total_parts}]")
     return messages
 
 
-def format_message(text: str, max_chars: int = 750) -> List[str]:
+def format_message(text: str) -> str:
     """
-    格式化消息：美化并分割成多个消息块
+    格式化消息：美化（含转义字符转换）并返回字符串
     
     Args:
         text: 原始消息文本
-        max_chars: 每个消息块的最大字符数（默认750，微信限制，包括空行和emoji）
         
     Returns:
-        格式化后的消息列表，每个消息不超过max_chars字符
+        格式化后的消息字符串（不做分片）
     """
     if not text:
-        return [text]
+        return text
     
     # 先美化
-    beautified = beautify_message(text)
-    
-    # 再分割
-    messages = split_message(beautified, max_chars=max_chars)
-    
-    return messages
+    return beautify_message(text)
 
