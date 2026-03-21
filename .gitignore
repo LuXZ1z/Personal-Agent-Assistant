@@ -23,18 +23,27 @@ wheels/
 .installed.cfg
 *.egg
 
+# 本地真实配置（仓库内仅保留 *_example.yaml 供参考）
 config/bots.yaml
 config/system.yaml
+config/*local*.yaml
+config/*secret*.yaml
 
-# 环境变量
+# 环境变量（含测试用本地文件）
 .env
-
+.env.*
+!.env.test.example
+!.env*.example
 
 # 数据库
 *.db
 *.sqlite
 *.sqlite3
 data/
+data.zip
+
+# 进程 / 本地产物
+*.pid
 
 # 日志
 logs/
@@ -55,4 +64,10 @@ Thumbs.db
 *.tmp
 *.bak
 *.cache
+
+# 密钥类文件（若单独存放）
+*.pem
+*.p12
+id_rsa
+id_ed25519
 

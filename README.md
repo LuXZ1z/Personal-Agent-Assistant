@@ -101,13 +101,24 @@ pip install -r requirements.txt
 
 项目使用 **YAML 配置文件**进行配置管理，支持多机器人部署。
 
+**首次克隆后**（这些文件不会出现在仓库里，请勿把真实密钥提交到 Git）：
+
+```bash
+cp config/system_example.yaml config/system.yaml
+cp config/bots_example.yaml config/bots.yaml
+# 按需创建 .env（若你的部署方式仍读取环境变量）
+# cp .env.test.example .env.test
+```
+
+然后编辑上述本地文件，填入你的 API Key、企业微信 Token/Secret 等。
+
 #### 1. 系统配置（`config/system.yaml`）
 
-编辑 `config/system.yaml` 配置系统级参数.
+编辑 `config/system.yaml` 配置系统级参数（由 `system_example.yaml` 复制而来）。
 
 #### 2. 机器人配置（`config/bots.yaml`）
 
-编辑 `config/bots.yaml` 配置一个或多个机器人.
+编辑 `config/bots.yaml` 配置一个或多个机器人（由 `bots_example.yaml` 复制而来）。
 
 **功能说明**：
 - 每个机器人可以配置不同的功能集（`features`）
